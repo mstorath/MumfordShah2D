@@ -4,7 +4,9 @@ This is an implementation of the methods described in the paper
 
 > **K. Hohm, M. Storath, A. Weinmann,**
 *An algorithmic framework for Mumford–Shah regularization of inverse problems in imaging,*
-Inverse Problems 31 (11), 115011
+Inverse Problems 31 (11), 115011, [Download](http://bigwww.epfl.ch/publications/hohm1501.pdf)
+
+
 
 ## Applications examples
 ### Edge preserving smoothing of vector-valued images
