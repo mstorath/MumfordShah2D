@@ -2,8 +2,8 @@
 This repository contains algorithms for edge preserving image restoration based on the Mumford-Shah model.
 This is an implementation of the methods described in the paper
 
-K. Hohm, M. Storath, A. Weinmann,
-An algorithmic framework for Mumford–Shah regularization of inverse problems in imaging,
+> **K. Hohm, M. Storath, A. Weinmann,**
+*An algorithmic framework for Mumford–Shah regularization of inverse problems in imaging,*
 Inverse Problems 31 (11), 115011
 
 ## Applications examples
