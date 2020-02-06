@@ -6,7 +6,7 @@ K. Hohm, M. Storath, A. Weinmann,
 An algorithmic framework for Mumford–Shah regularization of inverse problems in imaging,
 Inverse Problems 31 (11), 115011
 
-## Applications
+## Applications examples
 ### Edge preserving smoothing of vector-valued images
 
    - Supports smoothing of vector-valued images (e.g. multispectral images, feature images)
