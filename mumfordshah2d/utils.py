@@ -36,36 +36,46 @@ def hard_threshold(x: np.ndarray, tau: float | np.ndarray) -> np.ndarray:
 
 
 def expand_weights(weights: np.ndarray, f: np.ndarray) -> np.ndarray:
-    """Broadcast a 2-D weight map across the channel axis of a 3-D image.
+    """Replicate a weight map along the channel axis of a multichannel image.
 
-    Mirrors ``Auxiliary/expandWeights.m`` (alias ``plExpandWeights``). The
-    MATLAB version replicates the weights along ``size(f, 3)`` if the
-    channel counts disagree. We replicate to ``f.shape[2]``.
+    Mirrors ``Auxiliary/expandWeights.m``::
+
+        if size(f, 3) ~= size(weights, 3)
+            weights = repmat(weights, [1 1 size(f, 3)]);
+        end
+
+    In MATLAB ``size(any_array, 3)`` returns 1 for a 1-D vector or 2-D
+    matrix, so this is effectively a no-op unless ``f`` is genuinely 3-D
+    (multichannel) and ``weights`` is not yet aligned to its channel
+    count. We mirror the same semantics for arrays of any dimensionality.
 
     Parameters
     ----------
     weights : ndarray
-        Either ``(rows, cols)`` or ``(rows, cols, channels)``.
+        Weight map. Any ndim ≥ 1 is accepted.
     f : ndarray
-        Reference image whose channel count we match. Either ``(rows, cols)``
-        (treated as 1 channel) or ``(rows, cols, channels)``.
+        Reference array whose channel count we want to match. ``ndim < 3``
+        is treated as "1 channel"; ``ndim == 3`` uses ``f.shape[2]``.
 
     Returns
     -------
     ndarray
-        ``(rows, cols, channels)`` weight map.
+        Either ``weights`` unchanged (when the channel counts already match)
+        or ``weights`` replicated along a freshly added trailing axis to
+        match ``f.shape[2]``.
     """
     weights = np.asarray(weights, dtype=np.float64)
     f = np.asarray(f, dtype=np.float64)
-    f_channels = 1 if f.ndim == 2 else f.shape[2]
-    w_channels = 1 if weights.ndim == 2 else weights.shape[2]
+    # MATLAB: size(arr, 3) returns 1 if arr has fewer than 3 dims.
+    f_channels = f.shape[2] if f.ndim >= 3 else 1
+    w_channels = weights.shape[2] if weights.ndim >= 3 else 1
     if w_channels == f_channels:
-        if weights.ndim == 2 and f_channels == 1:
-            return weights[..., np.newaxis]
         return weights
-    if weights.ndim == 2:
-        return np.repeat(weights[..., np.newaxis], f_channels, axis=2)
     if w_channels == 1:
+        # Promote to (..., f_channels): add a trailing axis if needed,
+        # then replicate.
+        if weights.ndim < 3:
+            weights = weights[..., np.newaxis]
         return np.repeat(weights, f_channels, axis=2)
     raise ValueError(
         f"Cannot expand weights with {w_channels} channels to match image "

@@ -60,12 +60,22 @@ class TestExpandWeights:
         out = expand_weights(w, f)
         np.testing.assert_array_equal(out, w)
 
-    def test_grayscale_image(self):
+    def test_grayscale_image_returns_weights_unchanged(self):
+        # Both inputs have ndim < 3 (so MATLAB's size(., 3) == 1 for both),
+        # the channel counts already match, and expand_weights is a no-op.
         w = np.full((4, 5), 0.7)
-        f = np.zeros((4, 5))   # ndim==2 → 1 channel
+        f = np.zeros((4, 5))
         out = expand_weights(w, f)
-        assert out.shape == (4, 5, 1)
-        np.testing.assert_array_equal(out[..., 0], w)
+        assert out.shape == (4, 5)
+        np.testing.assert_array_equal(out, w)
+
+    def test_1d_inputs_match_matlab(self):
+        # MATLAB happily takes vectors here; size(v, 3) is 1 either way and
+        # the function is a no-op.
+        w = np.array([1.0, 1.0, 1.0])
+        f = np.array([0.0, 0.0, 0.0])
+        out = expand_weights(w, f)
+        np.testing.assert_array_equal(out, w)
 
 
 class TestRotate90:
