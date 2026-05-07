@@ -258,4 +258,109 @@ mod tests {
         // With heavy smoothing, mu won't equal y; cost must be > 0.
         assert!(dlr > 0.0, "dlr={}", dlr);
     }
+
+    /// Cached LU is the same for any sub-length k <= n. A solver built
+    /// with capacity n=20 must give identical answers for length-5 inputs
+    /// to a solver built with capacity n=5 — the LU is monotone in n.
+    #[test]
+    fn cached_lu_is_consistent_across_capacities() {
+        let alpha = 1.5;
+        let g_small = GaussL2Mum::new(5, alpha);
+        let g_large = GaussL2Mum::new(20, alpha);
+        let y = vec![0.0, 0.5, -0.25, 1.0, 0.75];
+        let a = g_small.compute_mu(&y);
+        let b = g_large.compute_mu(&y);
+        assert_close(&a, &b, 1e-14);
+    }
+
+    /// Translation equivariance: solve(y + c) = solve(y) + c. Highly
+    /// sensitive to indexing bugs because shifting changes ALL entries.
+    #[test]
+    fn translation_equivariance() {
+        let g = GaussL2Mum::new(8, 0.7);
+        let y = vec![0.0, 1.0, -2.0, 0.5, 3.0, -1.0, 0.25, 1.75];
+        let c = 7.5;
+        let mu = g.compute_mu(&y);
+        let y_shifted: Vec<f64> = y.iter().map(|v| v + c).collect();
+        let mu_shifted = g.compute_mu(&y_shifted);
+        let want: Vec<f64> = mu.iter().map(|v| v + c).collect();
+        assert_close(&mu_shifted, &want, 1e-12);
+    }
+
+    /// Scale equivariance: solve(s y) = s solve(y) for any s. Both data
+    /// and smoothness terms are quadratic in mu, so the optimum is
+    /// homogeneous of degree 1.
+    #[test]
+    fn scale_equivariance() {
+        let g = GaussL2Mum::new(8, 1.5);
+        let y = vec![0.0, 1.0, -2.0, 0.5, 3.0, -1.0, 0.25, 1.75];
+        let s = -3.5;
+        let mu = g.compute_mu(&y);
+        let y_scaled: Vec<f64> = y.iter().map(|v| s * v).collect();
+        let mu_scaled = g.compute_mu(&y_scaled);
+        let want: Vec<f64> = mu.iter().map(|v| s * v).collect();
+        assert_close(&mu_scaled, &want, 1e-10);
+    }
+
+    /// Optimality check: cost at mu* should be <= cost at any small
+    /// perturbation. Empirical proof that the solver lands in a minimum.
+    #[test]
+    fn solution_is_a_local_minimum() {
+        let alpha = 1.0;
+        let g = GaussL2Mum::new(10, alpha);
+        let y = vec![0.0, 0.5, 1.0, 0.5, 0.0, 0.0, 0.5, 1.0, 0.5, 0.0];
+        let mu = g.compute_mu(&y);
+        let cost = g.compute_dlr(&y);
+
+        // Try 50 random perturbations; cost must always be >= optimum.
+        let mut state: u64 = 0xC0FFEE;
+        for _ in 0..50 {
+            // Trivial LCG to avoid pulling in a PRNG dep.
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            let mut perturb = vec![0.0_f64; mu.len()];
+            for v in perturb.iter_mut() {
+                state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                let r = ((state >> 33) as f64 / (1u64 << 31) as f64) - 1.0;
+                *v = r * 1e-3;
+            }
+            let mu_p: Vec<f64> = mu.iter().zip(perturb.iter()).map(|(m, e)| m + e).collect();
+            let mut cost_p = 0.0_f64;
+            for i in 0..mu.len() - 1 {
+                let dy = y[i] - mu_p[i];
+                let dm = mu_p[i + 1] - mu_p[i];
+                cost_p += dy * dy + alpha * dm * dm;
+            }
+            let last = mu.len() - 1;
+            cost_p += (y[last] - mu_p[last]).powi(2);
+            assert!(
+                cost_p >= cost - 1e-9,
+                "perturbed cost {} below optimum {}",
+                cost_p,
+                cost
+            );
+        }
+    }
+
+    /// The LU factor pattern for a length-1 system must be `[1.0]` with
+    /// no off-diagonal factors, irrespective of alpha.
+    #[test]
+    fn length_one_lu_is_identity_for_any_alpha() {
+        for &alpha in &[0.0_f64, 0.5, 5.0, 1e6] {
+            let g = GaussL2Mum::new(5, alpha);
+            assert_eq!(g.diagonals[0], vec![1.0]);
+            assert_eq!(g.factors[0].len(), 0);
+        }
+    }
+
+    /// Diagonal storage layout matches the Java source: diagonals[k] has
+    /// length k+1 and factors[k] has length k.
+    #[test]
+    fn lu_storage_layout_matches_java_convention() {
+        let n = 6;
+        let g = GaussL2Mum::new(n, 0.4);
+        for k in 0..n {
+            assert_eq!(g.diagonals[k].len(), k + 1, "diagonals[{}]", k);
+            assert_eq!(g.factors[k].len(), k, "factors[{}]", k);
+        }
+    }
 }
