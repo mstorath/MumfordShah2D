@@ -6,6 +6,7 @@
 mod image;
 mod gauss_elim;
 mod mumfordshah_1d;
+mod direction_processor;
 
 use numpy::{IntoPyArray, PyArray1, PyReadonlyArray1};
 use pyo3::prelude::*;
