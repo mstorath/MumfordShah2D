@@ -57,23 +57,27 @@ impl Prox for L2DataProx {
     }
 }
 
-/// 4-connected (anisotropic) ADMM for the 2-D L2 Mumford-Shah problem.
-/// Two directions (S=2): rows + columns. Single ω = 1.
+/// Generalised consensus ADMM for the 2-D L2 Mumford-Shah problem.
 ///
-/// Optional inter-direction ρ coupling: when `nu_seq(k)` is non-zero, an
-/// extra dual variable per direction-pair (1 pair for S=2, 6 for S=4)
-/// strengthens convergence. This matches `mumfordShah2D.m`'s default
-/// `nuSeq(k) = muSeq(k) * S / nchoosek(S, 2)` (which makes `nuSeq(1) > 0`
-/// → `rhoFlag=true`). Pass `nu_seq = |_| 0.0` to disable coupling — the
-/// resulting Rust output then matches MATLAB called with the same.
+/// `nhood` lists the primary direction stencils (each `[dx, dy]`) and their
+/// per-direction ω weight. Each entry contributes 2 directions to the
+/// ADMM (un-rotated and 90°-rotated), so `S = 2 · nhood.len()`. Common
+/// choices match `mumfordShah2D.m`:
 ///
-/// `mu_seq[k]` is the dual step size at iteration `k` (1-indexed). Default
-/// in MATLAB: `mu_seq(k) = k².⁰¹ · 10⁻⁶`.
-pub fn admm_4connected_l2_ms<P, MuSeq, NuSeq>(
+///   isotropic = 0 (4-connected, anisotropic): &[([1,0], 1.0)]                S = 2
+///   isotropic = 1 (8-connected, near-isotropic): &[([1,0], √2-1), ([1,1], 1-√2/2)]    S = 4
+///   isotropic = 2 (knight-move): &[([1,0], …), ([1,1], …), ([2,1], …), ([1,2], …)]   S = 8
+///
+/// Optional inter-direction ρ coupling: when `nu_seq(k) ≠ 0`, ρ dual
+/// variables for each `r < t` pair (`C(S, 2)` of them) strengthen
+/// convergence — this matches MATLAB's default `rhoFlag=true`. Pass
+/// `nu_seq = |_| 0.0` to disable.
+pub fn admm_l2_ms<P, MuSeq, NuSeq>(
     f_data: Image,
     gamma: f64,
     alpha: f64,
     prox: &P,
+    nhood: &[([i64; 2], f64)],
     mu_seq: MuSeq,
     nu_seq: NuSeq,
     tol: f64,
@@ -85,8 +89,9 @@ where
     MuSeq: Fn(usize) -> f64,
     NuSeq: Fn(usize) -> f64,
 {
+    assert!(!nhood.is_empty(), "nhood must contain at least one direction");
     let (channels, n_row, n_col) = (f_data.channels(), f_data.n_row(), f_data.n_col());
-    let s_count: usize = 2; // 4-conn → S=2
+    let s_count: usize = 2 * nhood.len();
 
     // u_s for s in 0..S; ρ for the C(S, 2) directed-pair (r, t) with r < t.
     // MATLAB initialises u{s} = backproj = prox(0, mu(1)) ≈ f (rather than 0)
@@ -127,12 +132,14 @@ where
         let nu = if rho_flag { nu_seq(k) } else { 0.0 };
         let denom_w = mu + nu * (s_count as f64 - 1.0);
         let scale = 2.0 / denom_w;
-        let gamma_p = scale * gamma;
-        let alpha_p = scale * alpha;
 
         z.data.fill(0.0);
 
         for s in 0..s_count {
+            let nhood_idx = s / 2;
+            let (direction, omega) = nhood[nhood_idx];
+            let gamma_p = scale * omega * gamma;
+            let alpha_p = scale * omega * alpha;
             // w = mu * v + lams[s]  (then optionally + Σ_{r<s} ν u[r] - ρ[r,s]
             //                                    + Σ_{t>s} ν u[t] + ρ[s,t])
             //   then divide by (mu + ν (S-1)).
@@ -167,17 +174,13 @@ where
 
             // MATLAB rotates the *odd*-indexed (1-indexed) directions (s=1, 3, …),
             // which in 0-indexed Rust are s=0, 2, …. Rotation direction must
-            // match MATLAB's `rotate90(w, 1)` (CCW before, CW back) so the
-            // 1-D DP sees the same per-stripe input order — the DP's tie-
-            // breaking is not strictly symmetric to time-reversal, and a
-            // mismatched rotation direction introduces ~1e-6 drift before
-            // ADMM convergence.
+            // match MATLAB's `rotate90(w, 1)` (CCW before, CW back).
             if s % 2 == 0 {
                 let mut w_rot = w.rotate90_ccw();
-                run_direction(&mut w_rot, directions::ROW_STEP, gamma_p, alpha_p);
+                run_direction(&mut w_rot, direction, gamma_p, alpha_p);
                 u[s] = w_rot.rotate90_cw();
             } else {
-                run_direction(&mut w, directions::ROW_STEP, gamma_p, alpha_p);
+                run_direction(&mut w, direction, gamma_p, alpha_p);
                 u[s] = w;
             }
 
@@ -244,16 +247,8 @@ where
         };
 
         if verbose {
-            let v_avg: f64 = v.data.iter().sum::<f64>() / v.data.len() as f64;
-            let lam0_max: f64 = lam[0].data.iter().fold(0.0_f64, |a, b| a.max(b.abs()));
-            let lam1_max: f64 = lam[1].data.iter().fold(0.0_f64, |a, b| a.max(b.abs()));
-            let rho_max: f64 = if rho_flag {
-                rho_pair[0].data.iter().fold(0.0_f64, |a, b| a.max(b.abs()))
-            } else {
-                0.0
-            };
             eprintln!(
-                "iter {k}: mu={mu:.3e}, nu={nu:.3e}, err={err:.3e}, v_avg={v_avg:.3e}, |lam0|max={lam0_max:.3e}, |lam1|max={lam1_max:.3e}, |rho|max={rho_max:.3e}"
+                "iter {k}: mu={mu:.3e}, nu={nu:.3e}, err={err:.3e}, S={s_count}"
             );
         }
 
@@ -277,6 +272,76 @@ pub fn default_nu_seq(k: usize, s_count: usize) -> f64 {
 /// `'nuSeq', @(k) 0` in MATLAB. Disables ρ coupling.
 pub fn no_rho_coupling(_k: usize) -> f64 {
     0.0
+}
+
+/// 4-connected (anisotropic) neighbourhood — single direction `[1, 0]`,
+/// ω = 1. Maps to `mumfordShah2D.m` `'isotropic', 0`. S = 2.
+pub const NHOOD_4_CONNECTED: &[([i64; 2], f64)] = &[([1, 0], 1.0)];
+
+/// 8-connected (near-isotropic) neighbourhood — `[1,0]` and `[1,1]` with
+/// the MATLAB-default isotropy weights. Maps to `'isotropic', 1`. S = 4.
+/// `omega_1 = √2 − 1 ≈ 0.4142`, `omega_2 = 1 − √2/2 ≈ 0.2929`.
+pub fn nhood_8_connected() -> [([i64; 2], f64); 2] {
+    [
+        ([1, 0], std::f64::consts::SQRT_2 - 1.0),
+        ([1, 1], 1.0 - std::f64::consts::SQRT_2 / 2.0),
+    ]
+}
+
+/// Backward-compatible wrapper: 4-connected ADMM (S=2). Equivalent to
+/// `admm_l2_ms(..., NHOOD_4_CONNECTED, ...)`.
+pub fn admm_4connected_l2_ms<P, MuSeq, NuSeq>(
+    f_data: Image,
+    gamma: f64,
+    alpha: f64,
+    prox: &P,
+    mu_seq: MuSeq,
+    nu_seq: NuSeq,
+    tol: f64,
+    max_iter: usize,
+    verbose: bool,
+) -> Image
+where
+    P: Prox,
+    MuSeq: Fn(usize) -> f64,
+    NuSeq: Fn(usize) -> f64,
+{
+    admm_l2_ms(
+        f_data,
+        gamma,
+        alpha,
+        prox,
+        NHOOD_4_CONNECTED,
+        mu_seq,
+        nu_seq,
+        tol,
+        max_iter,
+        verbose,
+    )
+}
+
+/// 8-connected (near-isotropic) ADMM (S=4). Maps to MATLAB's
+/// `mumfordShah2D(..., 'isotropic', 1)`.
+pub fn admm_8connected_l2_ms<P, MuSeq, NuSeq>(
+    f_data: Image,
+    gamma: f64,
+    alpha: f64,
+    prox: &P,
+    mu_seq: MuSeq,
+    nu_seq: NuSeq,
+    tol: f64,
+    max_iter: usize,
+    verbose: bool,
+) -> Image
+where
+    P: Prox,
+    MuSeq: Fn(usize) -> f64,
+    NuSeq: Fn(usize) -> f64,
+{
+    let nhood = nhood_8_connected();
+    admm_l2_ms(
+        f_data, gamma, alpha, prox, &nhood, mu_seq, nu_seq, tol, max_iter, verbose,
+    )
 }
 
 /// Default mu schedule from `mumfordShah2D.m`:  μ(k) = k².⁰¹ · 10⁻⁶.

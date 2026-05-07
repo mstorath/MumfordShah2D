@@ -26,6 +26,8 @@ def min_l2_mum_2d(
     tol: float = 1e-3,
     max_iter: int = 50000,
     verbose: bool = False,
+    rho_coupling: bool = True,
+    isotropic: int = 0,
 ) -> NDArray[np.float64]:
     """Edge-preserving image restoration via the L2 Mumford-Shah model.
 
@@ -107,6 +109,11 @@ def min_l2_mum_2d(
             "from the repo root before calling min_l2_mum_2d."
         ) from e
 
+    if isotropic not in (0, 1):
+        raise ValueError(
+            f"isotropic must be 0 (4-connected) or 1 (8-connected), got {isotropic}"
+        )
+
     out3 = _rust_min_l2_mum_2d(
         arr3,
         gamma=float(gamma),
@@ -114,6 +121,8 @@ def min_l2_mum_2d(
         tol=float(tol),
         max_iter=int(max_iter),
         verbose=bool(verbose),
+        rho_coupling=bool(rho_coupling),
+        isotropic=int(isotropic),
     )
     if squeeze:
         return out3[0]

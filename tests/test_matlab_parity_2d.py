@@ -45,7 +45,15 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def _run_matlab_2d(f: np.ndarray, gamma: float, alpha: float, max_iter: int, *, rho_coupling: bool = True):
+def _run_matlab_2d(
+    f: np.ndarray,
+    gamma: float,
+    alpha: float,
+    max_iter: int,
+    *,
+    rho_coupling: bool = True,
+    isotropic: int = 0,
+):
     """Invoke `mumfordShah2D(gamma, alpha, makeProxL2w(f, ones), …)` in host MATLAB
     with the same settings the Rust port uses. Returns the smoothed image.
 
@@ -81,7 +89,7 @@ weights = ones(size(f));
 prox = makeProxL2w(f, weights);
 {nu_seq_arg}
 [out, nIter] = mumfordShah2D({gamma:.17e}, {alpha:.17e}, prox, ...
-    'isotropic', 0, 'tol', 1e-300, 'maxIter', {max_iter}, varargin{{:}});
+    'isotropic', {isotropic}, 'tol', 1e-300, 'maxIter', {max_iter}, varargin{{:}});
 fprintf('MATLAB nIter=%d\\n', nIter);
 writematrix(out, '{out_path}');
 """
@@ -144,6 +152,40 @@ def test_step_4x4(max_iter, rho_coupling):
 
     # Tight tolerance once both algorithms have converged or the simpler
     # path (no ρ-coupling) is in use; loose at intermediate iterates with ρ on.
+    if rho_coupling and max_iter < 100:
+        atol = 1e-5
+    else:
+        atol = 1e-9
+    npt.assert_allclose(out_rust, out_matlab, atol=atol)
+
+
+@pytest.mark.parametrize("rho_coupling", [True, False])
+@pytest.mark.parametrize("max_iter", [20, 100])
+def test_step_4x4_isotropic_1(max_iter, rho_coupling):
+    """Same step image as `test_step_4x4` but with `isotropic=1` (8-connected,
+    S=4: rows + cols + NW-SE diagonals + NE-SW diagonals). Tests that the
+    omega weights are applied correctly and the diagonal direction sweeps
+    align bit-for-bit with MATLAB."""
+    f = np.zeros((1, 4, 4), dtype=np.float64)
+    f[0, :, 2:] = 1.0
+
+    gamma = 0.05
+    alpha = 1e-6
+
+    out_rust = ms_core.min_l2_mum_2d(
+        f,
+        gamma=gamma,
+        alpha=alpha,
+        tol=1e-300,
+        max_iter=max_iter,
+        verbose=False,
+        rho_coupling=rho_coupling,
+        isotropic=1,
+    )
+    out_matlab = _run_matlab_2d(
+        f, gamma=gamma, alpha=alpha, max_iter=max_iter, rho_coupling=rho_coupling, isotropic=1,
+    )
+
     if rho_coupling and max_iter < 100:
         atol = 1e-5
     else:
