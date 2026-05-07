@@ -9,10 +9,12 @@ mod mumfordshah_1d;
 mod direction_processor;
 mod admm;
 
-use numpy::{IntoPyArray, PyArray1, PyReadonlyArray1};
+use numpy::{IntoPyArray, PyArray1, PyArray3, PyReadonlyArray1, PyReadonlyArray3};
 use pyo3::prelude::*;
 
+use crate::admm::{admm_4connected_l2_ms, default_mu_seq, L2DataProx};
 use crate::gauss_elim::{GaussElim, GaussL2Mum};
+use crate::image::Image;
 
 /// Solve the L2-Mumford-Shah within-segment smoothing problem
 /// `min_μ Σ(y_i - μ_i)² + α Σ(μ_{i+1} - μ_i)²` with cached LU.
@@ -43,10 +45,49 @@ fn gauss_l2_mum_cost(y: PyReadonlyArray1<f64>, alpha: f64) -> f64 {
     g.compute_dlr(y_slice)
 }
 
+/// Solve the 2-D L2 Mumford-Shah problem on a `(channels, rows, cols)` image
+/// using the 4-connected (anisotropic) ADMM driver. Returns the smoothed
+/// image with discontinuities, same shape as input.
+///
+/// Parameters mirror `mumfordShah2D.m`:
+///   `gamma`       Potts (jump) penalty.
+///   `alpha`       within-segment smoothness weight.
+///   `tol`         relative-discrepancy stopping tolerance. Set 0 to force
+///                 `max_iter` iterations (useful for parity testing).
+///   `max_iter`    iteration cap.
+///   `verbose`     print per-iteration diagnostics to stderr.
+#[pyfunction]
+#[pyo3(signature = (f, gamma, alpha, tol = 1e-3, max_iter = 50000, verbose = false))]
+fn min_l2_mum_2d<'py>(
+    py: Python<'py>,
+    f: PyReadonlyArray3<f64>,
+    gamma: f64,
+    alpha: f64,
+    tol: f64,
+    max_iter: usize,
+    verbose: bool,
+) -> Bound<'py, PyArray3<f64>> {
+    let arr = f.as_array().to_owned();
+    let img = Image::from_array(arr);
+    let prox = L2DataProx { f: img.clone() };
+    let result = admm_4connected_l2_ms(
+        img,
+        gamma,
+        alpha,
+        &prox,
+        default_mu_seq,
+        tol,
+        max_iter,
+        verbose,
+    );
+    result.data.into_pyarray_bound(py)
+}
+
 #[pymodule]
 #[pyo3(name = "_core")]
 fn mumfordshah2d_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(gauss_l2_mum_solve, m)?)?;
     m.add_function(wrap_pyfunction!(gauss_l2_mum_cost, m)?)?;
+    m.add_function(wrap_pyfunction!(min_l2_mum_2d, m)?)?;
     Ok(())
 }
