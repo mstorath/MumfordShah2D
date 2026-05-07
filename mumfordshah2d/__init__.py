@@ -9,12 +9,17 @@ ADMM driver and helper functions are pure Python / NumPy / SciPy.
 
 Status
 ------
-**0.1.0 — Phase 1 (alpha).** Scaffolding plus small primitives only. The
-high-level 2D solver lands in Phase 4. See ``PORTED_BY.md`` for the full
-phasing plan.
+**0.2.0 — Phase 4 (beta).** The 4-connected (anisotropic) 2-D Mumford-Shah
+ADMM driver is ported and verified at 1e-9 element-wise against MATLAB.
+8-connected and ρ-coupled variants are planned for 0.3.0+. See
+``CHANGELOG.md`` and ``PORTED_BY.md`` for the full phasing plan.
 
 Currently exported
 ------------------
+2-D ADMM driver (port of ``mumfordShah2D.m``)::
+
+    min_l2_mum_2d(f, gamma, alpha, *, tol=1e-3, max_iter=50000)
+
 Utilities (port of MATLAB ``Auxiliary/*.m``)::
 
     soft_threshold, hard_threshold, expand_weights, rotate90, psnr
@@ -27,7 +32,7 @@ Prox handles for the ADMM data-fidelity term (port of
     make_prox_l0w   — hard-thresholding / weighted L0
     make_prox_inpaint — inpainting from a mask
 
-Phase 1 Rust primitive::
+Rust primitives::
 
     gauss_l2_mum_solve(y, alpha)   — L2-MS within-segment smoothing
     gauss_l2_mum_cost(y, alpha)    — corresponding cost
@@ -40,7 +45,7 @@ in imaging.* Inverse Problems 31 (11), 115011, 2015.
 DOI 10.1088/0266-5611/31/11/115011.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __original_authors__ = "Kilian Hohm, Martin Storath, Andreas Weinmann"
 __ported_by__ = (
     "Claude Sonnet coding agent (Anthropic, 2026) — "
@@ -60,6 +65,7 @@ from mumfordshah2d.prox import (
     make_prox_l0w,
     make_prox_inpaint,
 )
+from mumfordshah2d.admm import min_l2_mum_2d
 
 # The compiled Rust core. If the extension isn't built yet, fall back to the
 # pure-Python implementation in `_core_py` so the package still imports —
@@ -86,6 +92,8 @@ __all__ = [
     # Rust primitive
     "gauss_l2_mum_solve",
     "gauss_l2_mum_cost",
+    # 2-D ADMM driver
+    "min_l2_mum_2d",
     # Metadata
     "__version__",
     "__original_authors__",
