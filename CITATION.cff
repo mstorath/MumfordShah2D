@@ -1,0 +1,41 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite both the software and the associated paper below."
+title: "MumfordShah2D: Edge-preserving image restoration via the Mumford-Shah model"
+abstract: "Algorithms for edge-preserving image restoration based on the Mumford-Shah model. Original MATLAB / Java reference implementation by Hohm, Storath, and Weinmann; a Python / Rust port (package `mumfordshah2d`) is being added to the same repository."
+type: software
+url: "https://github.com/mstorath/MumfordShah2D"
+repository-code: "https://github.com/mstorath/MumfordShah2D"
+license: MIT
+authors:
+  - family-names: Hohm
+    given-names: Kilian
+  - family-names: Storath
+    given-names: Martin
+    email: martin.storath@thws.de
+    orcid: "https://orcid.org/0000-0003-1427-0776"
+    affiliation: "Lab for Mathematical Methods in Computer Vision and Machine Learning, Technische Hochschule Würzburg-Schweinfurt"
+  - family-names: Weinmann
+    given-names: Andreas
+    email: andreas.weinmann@h-da.de
+    orcid: "https://orcid.org/0000-0002-4969-7609"
+    affiliation: "Department of Mathematics and Natural Sciences, Hochschule Darmstadt"
+preferred-citation:
+  type: article
+  title: "An algorithmic framework for Mumford–Shah regularization of inverse problems in imaging"
+  authors:
+    - family-names: Hohm
+      given-names: Kilian
+    - family-names: Storath
+      given-names: Martin
+      orcid: "https://orcid.org/0000-0003-1427-0776"
+    - family-names: Weinmann
+      given-names: Andreas
+      orcid: "https://orcid.org/0000-0002-4969-7609"
+  journal: "Inverse Problems"
+  volume: 31
+  issue: 11
+  start: "115011"
+  year: 2015
+  publisher:
+    name: "IOP Publishing"
+  doi: "10.1088/0266-5611/31/11/115011"
