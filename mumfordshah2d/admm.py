@@ -109,9 +109,9 @@ def min_l2_mum_2d(
             "from the repo root before calling min_l2_mum_2d."
         ) from e
 
-    if isotropic not in (0, 1):
+    if isotropic not in (0, 1, 2):
         raise ValueError(
-            f"isotropic must be 0 (4-connected) or 1 (8-connected), got {isotropic}"
+            f"isotropic must be 0 (4-connected), 1 (8-connected), or 2 (knight-move), got {isotropic}"
         )
 
     out3 = _rust_min_l2_mum_2d(

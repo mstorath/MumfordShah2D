@@ -195,6 +195,40 @@ def test_step_4x4_isotropic_1(max_iter, rho_coupling):
 
 @pytest.mark.parametrize("rho_coupling", [True, False])
 @pytest.mark.parametrize("max_iter", [20, 100])
+def test_step_4x4_isotropic_2(max_iter, rho_coupling):
+    """Knight-move neighbourhood (isotropic=2, S=8). Adds the [2,1] and
+    [1,2] direction stencils to the consensus split. The parity test
+    verifies that the four omega weights and the two extra direction
+    iterators align with MATLAB."""
+    f = np.zeros((1, 4, 4), dtype=np.float64)
+    f[0, :, 2:] = 1.0
+
+    gamma = 0.05
+    alpha = 1e-6
+
+    out_rust = ms_core.min_l2_mum_2d(
+        f,
+        gamma=gamma,
+        alpha=alpha,
+        tol=1e-300,
+        max_iter=max_iter,
+        verbose=False,
+        rho_coupling=rho_coupling,
+        isotropic=2,
+    )
+    out_matlab = _run_matlab_2d(
+        f, gamma=gamma, alpha=alpha, max_iter=max_iter, rho_coupling=rho_coupling, isotropic=2,
+    )
+
+    if rho_coupling and max_iter < 100:
+        atol = 1e-5
+    else:
+        atol = 1e-9
+    npt.assert_allclose(out_rust, out_matlab, atol=atol)
+
+
+@pytest.mark.parametrize("rho_coupling", [True, False])
+@pytest.mark.parametrize("max_iter", [20, 100])
 def test_constant_image_4x4(max_iter, rho_coupling):
     """Constant image must be invariant to any number of ADMM iterations."""
     f = np.full((1, 4, 4), 0.7, dtype=np.float64)

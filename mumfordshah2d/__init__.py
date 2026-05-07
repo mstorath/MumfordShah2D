@@ -45,7 +45,7 @@ in imaging.* Inverse Problems 31 (11), 115011, 2015.
 DOI 10.1088/0266-5611/31/11/115011.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 __original_authors__ = "Kilian Hohm, Martin Storath, Andreas Weinmann"
 __ported_by__ = (
     "Claude Sonnet coding agent (Anthropic, 2026) — "

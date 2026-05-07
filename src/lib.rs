@@ -13,8 +13,8 @@ use numpy::{IntoPyArray, PyArray1, PyArray3, PyReadonlyArray1, PyReadonlyArray3}
 use pyo3::prelude::*;
 
 use crate::admm::{
-    admm_4connected_l2_ms, admm_8connected_l2_ms, default_mu_seq, default_nu_seq,
-    no_rho_coupling, L2DataProx,
+    admm_4connected_l2_ms, admm_8connected_l2_ms, admm_knight_l2_ms, default_mu_seq,
+    default_nu_seq, no_rho_coupling, L2DataProx,
 };
 use crate::gauss_elim::{GaussElim, GaussL2Mum};
 use crate::image::Image;
@@ -78,7 +78,8 @@ fn min_l2_mum_2d<'py>(
     let s_count: usize = match isotropic {
         0 => 2,
         1 => 4,
-        other => panic!("unsupported isotropic mode {other}; expected 0 (4-connected) or 1 (8-connected)"),
+        2 => 8,
+        other => panic!("unsupported isotropic mode {other}; expected 0, 1, or 2"),
     };
     let nu_seq_default = move |k: usize| default_nu_seq(k, s_count);
     let result = match (isotropic, rho_coupling) {
@@ -86,6 +87,8 @@ fn min_l2_mum_2d<'py>(
         (0, false) => admm_4connected_l2_ms(img, gamma, alpha, &prox, default_mu_seq, no_rho_coupling, tol, max_iter, verbose),
         (1, true) => admm_8connected_l2_ms(img, gamma, alpha, &prox, default_mu_seq, nu_seq_default, tol, max_iter, verbose),
         (1, false) => admm_8connected_l2_ms(img, gamma, alpha, &prox, default_mu_seq, no_rho_coupling, tol, max_iter, verbose),
+        (2, true) => admm_knight_l2_ms(img, gamma, alpha, &prox, default_mu_seq, nu_seq_default, tol, max_iter, verbose),
+        (2, false) => admm_knight_l2_ms(img, gamma, alpha, &prox, default_mu_seq, no_rho_coupling, tol, max_iter, verbose),
         _ => unreachable!(),
     };
     result.data.into_pyarray_bound(py)

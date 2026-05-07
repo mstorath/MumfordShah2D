@@ -2,6 +2,37 @@
 
 ## [Unreleased]
 
+## 0.3.0 — 2026-05-07 (Phase 5 — full neighbourhood coverage)
+
+Closes the gap between the Rust port and `mumfordShah2D.m`'s feature set:
+the third (knight-move) neighbourhood lands and is parity-tested.
+
+### Added
+
+- **Knight-move neighbourhood** (`isotropic=2`, S=8). Uses the four
+  primary stencils `[1,0]`, `[1,1]`, `[2,1]`, `[1,2]` with the
+  MATLAB-default near-isotropic weights (ω ≈ {0.236, 0.115, 0.083, 0.083}).
+  The closest-to-isotropic discretisation in the family.
+- `admm.admm_knight_l2_ms` Rust entry point (thin wrapper over
+  `admm_l2_ms` with `nhood_knight_move()`).
+- `min_l2_mum_2d(..., isotropic=2)` Python kwarg.
+
+### Verified
+
+16/16 live MATLAB-parity cases pass (4 isotropic modes ✕ ρ ∈ {True, False}
+× max_iter ∈ {20, 100}, plus the constant-image control). Tight
+`atol=1e-9` everywhere except the known transient ρ=True/max_iter=20
+case (`atol=1e-5` — converges to 1e-9 by max_iter=100).
+
+### Not yet supported (planned for 0.4.0+)
+
+- Custom μ schedules and arbitrary prox handles via the Python API.
+  (The Rust `admm_l2_ms` already accepts `mu_seq: impl Fn(usize) -> f64`,
+  `nu_seq: impl Fn(usize) -> f64`, and any `impl Prox`; only the PyO3
+  wrapper hardcodes `default_mu_seq` and `L2DataProx`.)
+- Non-uniform data weights (`weights ≠ 1` in the L2 prox; the Rust trait
+  is general, the wrapper isn't).
+
 ## 0.2.0 — 2026-05-07 (Phase 4 — 4-connected 2-D ADMM)
 
 The 2-D L2 Mumford-Shah solver lands. The package transitions from "alpha,

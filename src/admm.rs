@@ -288,6 +288,23 @@ pub fn nhood_8_connected() -> [([i64; 2], f64); 2] {
     ]
 }
 
+/// Knight-move neighbourhood — `[1,0]`, `[1,1]`, `[2,1]`, `[1,2]` with
+/// the MATLAB-default near-isotropic weights. Maps to `'isotropic', 2`. S = 8.
+///   ω_1 = √5 − 2 ≈ 0.2361
+///   ω_2 = √5 − (3/2)√2 ≈ 0.1146
+///   ω_3 = ω_4 = ½(1 + √2 − √5) ≈ 0.0827
+pub fn nhood_knight_move() -> [([i64; 2], f64); 4] {
+    let s5 = 5.0_f64.sqrt();
+    let s2 = std::f64::consts::SQRT_2;
+    let omega_3 = 0.5 * (1.0 + s2 - s5);
+    [
+        ([1, 0], s5 - 2.0),
+        ([1, 1], s5 - 1.5 * s2),
+        ([2, 1], omega_3),
+        ([1, 2], omega_3),
+    ]
+}
+
 /// Backward-compatible wrapper: 4-connected ADMM (S=2). Equivalent to
 /// `admm_l2_ms(..., NHOOD_4_CONNECTED, ...)`.
 pub fn admm_4connected_l2_ms<P, MuSeq, NuSeq>(
@@ -339,6 +356,30 @@ where
     NuSeq: Fn(usize) -> f64,
 {
     let nhood = nhood_8_connected();
+    admm_l2_ms(
+        f_data, gamma, alpha, prox, &nhood, mu_seq, nu_seq, tol, max_iter, verbose,
+    )
+}
+
+/// Knight-move ADMM (S=8). Maps to MATLAB's `mumfordShah2D(..., 'isotropic', 2)`
+/// — the closest-to-isotropic discretisation in the family.
+pub fn admm_knight_l2_ms<P, MuSeq, NuSeq>(
+    f_data: Image,
+    gamma: f64,
+    alpha: f64,
+    prox: &P,
+    mu_seq: MuSeq,
+    nu_seq: NuSeq,
+    tol: f64,
+    max_iter: usize,
+    verbose: bool,
+) -> Image
+where
+    P: Prox,
+    MuSeq: Fn(usize) -> f64,
+    NuSeq: Fn(usize) -> f64,
+{
+    let nhood = nhood_knight_move();
     admm_l2_ms(
         f_data, gamma, alpha, prox, &nhood, mu_seq, nu_seq, tol, max_iter, verbose,
     )

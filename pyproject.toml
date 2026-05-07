@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "mumfordshah2d"
-version = "0.2.0"
+version = "0.3.0"
 description = "Mumford-Shah edge-preserving image restoration — Python/Rust port of MATLAB/Java MumfordShah2D (Hohm, Storath & Weinmann)"
 readme = "README_PYTHON.md"
 license = {text = "MIT"}
