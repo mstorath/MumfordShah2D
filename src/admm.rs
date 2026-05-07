@@ -58,59 +58,124 @@ impl Prox for L2DataProx {
 }
 
 /// 4-connected (anisotropic) ADMM for the 2-D L2 Mumford-Shah problem.
-/// Two directions (S=2): rows + columns. Single ω = 1, no inter-direction
-/// rho coupling.
+/// Two directions (S=2): rows + columns. Single ω = 1.
 ///
-/// `mu_seq[k]` is the dual step size at iteration `k` (1-indexed, like the
-/// MATLAB driver). Default in MATLAB: `mu_seq(k) = k².⁰¹ · 10⁻⁶`. The
-/// caller supplies the sequence (closure) so we don't bake in the schedule.
-pub fn admm_4connected_l2_ms<P: Prox>(
+/// Optional inter-direction ρ coupling: when `nu_seq(k)` is non-zero, an
+/// extra dual variable per direction-pair (1 pair for S=2, 6 for S=4)
+/// strengthens convergence. This matches `mumfordShah2D.m`'s default
+/// `nuSeq(k) = muSeq(k) * S / nchoosek(S, 2)` (which makes `nuSeq(1) > 0`
+/// → `rhoFlag=true`). Pass `nu_seq = |_| 0.0` to disable coupling — the
+/// resulting Rust output then matches MATLAB called with the same.
+///
+/// `mu_seq[k]` is the dual step size at iteration `k` (1-indexed). Default
+/// in MATLAB: `mu_seq(k) = k².⁰¹ · 10⁻⁶`.
+pub fn admm_4connected_l2_ms<P, MuSeq, NuSeq>(
     f_data: Image,
     gamma: f64,
     alpha: f64,
     prox: &P,
-    mu_seq: impl Fn(usize) -> f64,
+    mu_seq: MuSeq,
+    nu_seq: NuSeq,
     tol: f64,
     max_iter: usize,
     verbose: bool,
-) -> Image {
+) -> Image
+where
+    P: Prox,
+    MuSeq: Fn(usize) -> f64,
+    NuSeq: Fn(usize) -> f64,
+{
     let (channels, n_row, n_col) = (f_data.channels(), f_data.n_row(), f_data.n_col());
     let s_count: usize = 2; // 4-conn → S=2
 
-    // u_1 = vertical (rows-as-stripes via rotation), u_2 = horizontal — but the
-    // MATLAB driver enumerates them the other way: s=1 (odd) processes
-    // direction [1,0] = column-stripes, s=2 (even) rotates first → row-stripes.
-    let mut u: Vec<Image> = (0..s_count)
+    // u_s for s in 0..S; ρ for the C(S, 2) directed-pair (r, t) with r < t.
+    // MATLAB initialises u{s} = backproj = prox(0, mu(1)) ≈ f (rather than 0)
+    // so that the iter-1 cross-direction `nu * u{t}` term sees a sensible
+    // starting point. Mirroring that here.
+    let mut u: Vec<Image> = (0..s_count).map(|_| f_data.clone()).collect();
+    {
+        // Apply prox(zero_image, mu(1)) once to seed u_s exactly the same way.
+        let mu1 = mu_seq(1);
+        let zero = Image::zeros(channels, n_row, n_col);
+        let mut backproj = Image::zeros(channels, n_row, n_col);
+        prox.apply(&zero, mu1, &mut backproj);
+        for s in 0..s_count {
+            u[s] = backproj.clone();
+        }
+    }
+    let mut lam: Vec<Image> = (0..s_count)
         .map(|_| Image::zeros(channels, n_row, n_col))
         .collect();
-    let mut lam: Vec<Image> = (0..s_count)
+    // rho_pair[(r, t)] for r < t. For S=2: one pair (0, 1). For S=4: six.
+    let mut rho_pair: Vec<Image> = (0..s_count * (s_count - 1) / 2)
         .map(|_| Image::zeros(channels, n_row, n_col))
         .collect();
     let mut v = f_data.clone();
     let mut z = Image::zeros(channels, n_row, n_col);
 
+    let pair_index = |r: usize, t: usize| -> usize {
+        // Triangular indexing for r < t in 0..s_count: 0 for (0,1), then
+        // (0,2), (1,2), (0,3), (1,3), (2,3), … (column-major upper triangle).
+        debug_assert!(r < t);
+        t * (t - 1) / 2 + r
+    };
+
+    let rho_flag = nu_seq(1) != 0.0;
+
     for k in 1..=max_iter {
         let mu = mu_seq(k);
-        let denom_w = mu; // no rho coupling for S=2 / nu=0 → denominator is mu
+        let nu = if rho_flag { nu_seq(k) } else { 0.0 };
+        let denom_w = mu + nu * (s_count as f64 - 1.0);
         let scale = 2.0 / denom_w;
         let gamma_p = scale * gamma;
         let alpha_p = scale * alpha;
 
-        // Build z by accumulating u_s − λ_s/μ.
         z.data.fill(0.0);
 
         for s in 0..s_count {
-            // w = (μ v + λ_s) / μ = v + λ_s / μ
+            // w = mu * v + lams[s]  (then optionally + Σ_{r<s} ν u[r] - ρ[r,s]
+            //                                    + Σ_{t>s} ν u[t] + ρ[s,t])
+            //   then divide by (mu + ν (S-1)).
             let mut w = Image::zeros(channels, n_row, n_col);
             for ((slot, vv), lv) in w.data.iter_mut().zip(v.data.iter()).zip(lam[s].data.iter()) {
-                *slot = vv + lv / mu;
+                *slot = mu * vv + lv;
+            }
+            // Sign convention (verbatim from `mumfordShah2D.m:139–146`):
+            //   r < s  →  w += ν u_r + ρ_{r,s}
+            //   t > s  →  w += ν u_t − ρ_{s,t}
+            if rho_flag {
+                for r in 0..s {
+                    let rho = &rho_pair[pair_index(r, s)];
+                    for ((slot, ur), rh) in
+                        w.data.iter_mut().zip(u[r].data.iter()).zip(rho.data.iter())
+                    {
+                        *slot += nu * ur + rh;
+                    }
+                }
+                for t in (s + 1)..s_count {
+                    let rho = &rho_pair[pair_index(s, t)];
+                    for ((slot, ut), rh) in
+                        w.data.iter_mut().zip(u[t].data.iter()).zip(rho.data.iter())
+                    {
+                        *slot += nu * ut - rh;
+                    }
+                }
+            }
+            for slot in w.data.iter_mut() {
+                *slot /= denom_w;
             }
 
-            // Even s: rotate, run, rotate back.
-            if s % 2 == 1 {
-                let mut w_rot = w.rotate90_cw();
+            // MATLAB rotates the *odd*-indexed (1-indexed) directions (s=1, 3, …),
+            // which in 0-indexed Rust are s=0, 2, …. Rotation direction must
+            // match MATLAB's `rotate90(w, 1)` (CCW before, CW back) so the
+            // 1-D DP sees the same per-stripe input order — the DP's tie-
+            // breaking is not strictly symmetric to time-reversal, and a
+            // mismatched rotation direction introduces ~1e-6 drift before
+            // ADMM convergence.
+            if s % 2 == 0 {
+                let mut w_rot = w.rotate90_ccw();
                 run_direction(&mut w_rot, directions::ROW_STEP, gamma_p, alpha_p);
-                u[s] = w_rot.rotate90_ccw();
+                u[s] = w_rot.rotate90_cw();
             } else {
                 run_direction(&mut w, directions::ROW_STEP, gamma_p, alpha_p);
                 u[s] = w;
@@ -147,6 +212,21 @@ pub fn admm_4connected_l2_ms<P: Prox>(
             }
         }
 
+        // ρ_{r, t} = ρ_{r, t} + ν (u_r − u_t)
+        if rho_flag {
+            for r in 0..s_count {
+                for t in (r + 1)..s_count {
+                    let idx = pair_index(r, t);
+                    // Borrow u[r] and u[t] immutably; rho_pair[idx] mutably.
+                    let (ur, ut) = (&u[r], &u[t]);
+                    let rho = &mut rho_pair[idx];
+                    for ((slot, urv), utv) in rho.data.iter_mut().zip(ur.data.iter()).zip(ut.data.iter()) {
+                        *slot += nu * (urv - utv);
+                    }
+                }
+            }
+        }
+
         // Stopping criterion: relative discrepancy between the two u_s.
         let mut diff_sq = 0.0;
         let mut u0_sq = 0.0;
@@ -164,8 +244,16 @@ pub fn admm_4connected_l2_ms<P: Prox>(
         };
 
         if verbose {
+            let v_avg: f64 = v.data.iter().sum::<f64>() / v.data.len() as f64;
+            let lam0_max: f64 = lam[0].data.iter().fold(0.0_f64, |a, b| a.max(b.abs()));
+            let lam1_max: f64 = lam[1].data.iter().fold(0.0_f64, |a, b| a.max(b.abs()));
+            let rho_max: f64 = if rho_flag {
+                rho_pair[0].data.iter().fold(0.0_f64, |a, b| a.max(b.abs()))
+            } else {
+                0.0
+            };
             eprintln!(
-                "iter {k}: mu={mu:.3e}, err={err:.3e}, gamma'={gamma_p:.3e}, alpha'={alpha_p:.3e}"
+                "iter {k}: mu={mu:.3e}, nu={nu:.3e}, err={err:.3e}, v_avg={v_avg:.3e}, |lam0|max={lam0_max:.3e}, |lam1|max={lam1_max:.3e}, |rho|max={rho_max:.3e}"
             );
         }
 
@@ -175,6 +263,20 @@ pub fn admm_4connected_l2_ms<P: Prox>(
     }
 
     v
+}
+
+/// Default ν schedule from `mumfordShah2D.m` for `S` directions:
+///   ν(k) = μ(k) · S / nchoosek(S, 2)
+/// For S=2: ν(k) = 2 μ(k); for S=4: ν(k) = (4/6) μ(k) = (2/3) μ(k).
+pub fn default_nu_seq(k: usize, s_count: usize) -> f64 {
+    let nck = (s_count * (s_count - 1) / 2) as f64;
+    default_mu_seq(k) * s_count as f64 / nck
+}
+
+/// `nu_seq` constructor that returns 0.0 always — equivalent to passing
+/// `'nuSeq', @(k) 0` in MATLAB. Disables ρ coupling.
+pub fn no_rho_coupling(_k: usize) -> f64 {
+    0.0
 }
 
 /// Default mu schedule from `mumfordShah2D.m`:  μ(k) = k².⁰¹ · 10⁻⁶.
@@ -209,6 +311,7 @@ mod tests {
             1.0,
             &prox,
             default_mu_seq,
+            no_rho_coupling,
             1e-3,
             500,
             false,
@@ -229,6 +332,7 @@ mod tests {
             1e-6,
             &prox,
             default_mu_seq,
+            no_rho_coupling,
             1e-3,
             2000,
             false,

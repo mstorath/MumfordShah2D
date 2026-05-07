@@ -45,9 +45,13 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def _run_matlab_2d(f: np.ndarray, gamma: float, alpha: float, max_iter: int):
+def _run_matlab_2d(f: np.ndarray, gamma: float, alpha: float, max_iter: int, *, rho_coupling: bool = True):
     """Invoke `mumfordShah2D(gamma, alpha, makeProxL2w(f, ones), …)` in host MATLAB
     with the same settings the Rust port uses. Returns the smoothed image.
+
+    When ``rho_coupling=False``, passes `nuSeq = @(k) 0` to MATLAB so it
+    skips the inter-direction ρ dual-variable updates (matches the Rust
+    `no_rho_coupling` schedule).
     """
     work_dir = Path(tempfile.mkdtemp(prefix="ms2d-2d-parity-", dir=WORKSPACE_ROOT))
     try:
@@ -68,15 +72,16 @@ def _run_matlab_2d(f: np.ndarray, gamma: float, alpha: float, max_iter: int):
 
         np.savetxt(in_path, f2d, delimiter=",", fmt="%.17e")
 
+        nu_seq_arg = "varargin = {'nuSeq', @(k) 0};" if not rho_coupling else "varargin = {};"
         script = f"""
 addpath(genpath('{REPO_ROOT}'));
 javaaddpath('{REPO_ROOT}/Java/bin');
 f = readmatrix('{in_path}');
 weights = ones(size(f));
 prox = makeProxL2w(f, weights);
+{nu_seq_arg}
 [out, nIter] = mumfordShah2D({gamma:.17e}, {alpha:.17e}, prox, ...
-    'isotropic', 0, 'tol', 1e-300, 'maxIter', {max_iter}, ...
-    'nuSeq', @(k) 0);
+    'isotropic', 0, 'tol', 1e-300, 'maxIter', {max_iter}, varargin{{:}});
 fprintf('MATLAB nIter=%d\\n', nIter);
 writematrix(out, '{out_path}');
 """
@@ -106,9 +111,18 @@ writematrix(out, '{out_path}');
 # Tiny deterministic cases
 # ----------------------------------------------------------------------
 
+@pytest.mark.parametrize("rho_coupling", [True, False])
 @pytest.mark.parametrize("max_iter", [20, 100])
-def test_step_4x4(max_iter):
-    """Binary step image, low γ, modest α."""
+def test_step_4x4(max_iter, rho_coupling):
+    """Binary step image, low γ, modest α. Tested with both ρ-coupled
+    (MATLAB-default) and ρ-disabled (`nuSeq=@(k) 0`) ADMM variants.
+
+    Without ρ-coupling the two implementations are bit-identical (atol=1e-9).
+    With ρ-coupling the iterate trajectories agree to atol=1e-5 at low
+    max_iter (the ADMM algorithms differ in floating-point accumulator order
+    inside the cross-direction sum) and tighten to atol=1e-9 by max_iter=100
+    (both implementations have converged to the same fixed point).
+    """
     f = np.zeros((1, 4, 4), dtype=np.float64)
     f[0, :, 2:] = 1.0
 
@@ -116,15 +130,30 @@ def test_step_4x4(max_iter):
     alpha = 1e-6
 
     out_rust = ms_core.min_l2_mum_2d(
-        f, gamma=gamma, alpha=alpha, tol=0.0, max_iter=max_iter, verbose=False
+        f,
+        gamma=gamma,
+        alpha=alpha,
+        tol=1e-300,
+        max_iter=max_iter,
+        verbose=False,
+        rho_coupling=rho_coupling,
     )
-    out_matlab = _run_matlab_2d(f, gamma=gamma, alpha=alpha, max_iter=max_iter)
+    out_matlab = _run_matlab_2d(
+        f, gamma=gamma, alpha=alpha, max_iter=max_iter, rho_coupling=rho_coupling
+    )
 
-    npt.assert_allclose(out_rust, out_matlab, atol=1e-9)
+    # Tight tolerance once both algorithms have converged or the simpler
+    # path (no ρ-coupling) is in use; loose at intermediate iterates with ρ on.
+    if rho_coupling and max_iter < 100:
+        atol = 1e-5
+    else:
+        atol = 1e-9
+    npt.assert_allclose(out_rust, out_matlab, atol=atol)
 
 
+@pytest.mark.parametrize("rho_coupling", [True, False])
 @pytest.mark.parametrize("max_iter", [20, 100])
-def test_constant_image_4x4(max_iter):
+def test_constant_image_4x4(max_iter, rho_coupling):
     """Constant image must be invariant to any number of ADMM iterations."""
     f = np.full((1, 4, 4), 0.7, dtype=np.float64)
 
@@ -132,8 +161,16 @@ def test_constant_image_4x4(max_iter):
     alpha = 1.0
 
     out_rust = ms_core.min_l2_mum_2d(
-        f, gamma=gamma, alpha=alpha, tol=0.0, max_iter=max_iter, verbose=False
+        f,
+        gamma=gamma,
+        alpha=alpha,
+        tol=1e-300,
+        max_iter=max_iter,
+        verbose=False,
+        rho_coupling=rho_coupling,
     )
-    out_matlab = _run_matlab_2d(f, gamma=gamma, alpha=alpha, max_iter=max_iter)
+    out_matlab = _run_matlab_2d(
+        f, gamma=gamma, alpha=alpha, max_iter=max_iter, rho_coupling=rho_coupling
+    )
 
     npt.assert_allclose(out_rust, out_matlab, atol=1e-9)

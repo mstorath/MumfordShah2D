@@ -12,7 +12,7 @@ mod admm;
 use numpy::{IntoPyArray, PyArray1, PyArray3, PyReadonlyArray1, PyReadonlyArray3};
 use pyo3::prelude::*;
 
-use crate::admm::{admm_4connected_l2_ms, default_mu_seq, L2DataProx};
+use crate::admm::{admm_4connected_l2_ms, default_mu_seq, default_nu_seq, no_rho_coupling, L2DataProx};
 use crate::gauss_elim::{GaussElim, GaussL2Mum};
 use crate::image::Image;
 
@@ -57,7 +57,7 @@ fn gauss_l2_mum_cost(y: PyReadonlyArray1<f64>, alpha: f64) -> f64 {
 ///   `max_iter`    iteration cap.
 ///   `verbose`     print per-iteration diagnostics to stderr.
 #[pyfunction]
-#[pyo3(signature = (f, gamma, alpha, tol = 1e-3, max_iter = 50000, verbose = false))]
+#[pyo3(signature = (f, gamma, alpha, tol = 1e-3, max_iter = 50000, verbose = false, rho_coupling = true))]
 fn min_l2_mum_2d<'py>(
     py: Python<'py>,
     f: PyReadonlyArray3<f64>,
@@ -66,20 +66,22 @@ fn min_l2_mum_2d<'py>(
     tol: f64,
     max_iter: usize,
     verbose: bool,
+    rho_coupling: bool,
 ) -> Bound<'py, PyArray3<f64>> {
     let arr = f.as_array().to_owned();
     let img = Image::from_array(arr);
     let prox = L2DataProx { f: img.clone() };
-    let result = admm_4connected_l2_ms(
-        img,
-        gamma,
-        alpha,
-        &prox,
-        default_mu_seq,
-        tol,
-        max_iter,
-        verbose,
-    );
+    // S = 2 for the 4-connected variant exposed here.
+    let nu_seq_default = |k: usize| default_nu_seq(k, 2);
+    let result = if rho_coupling {
+        admm_4connected_l2_ms(
+            img, gamma, alpha, &prox, default_mu_seq, nu_seq_default, tol, max_iter, verbose,
+        )
+    } else {
+        admm_4connected_l2_ms(
+            img, gamma, alpha, &prox, default_mu_seq, no_rho_coupling, tol, max_iter, verbose,
+        )
+    };
     result.data.into_pyarray_bound(py)
 }
 
