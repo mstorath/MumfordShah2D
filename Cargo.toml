@@ -14,13 +14,23 @@ repository = "https://github.com/mstorath/MumfordShah2D"
 
 [lib]
 name = "_mumfordshah2d_core"
-crate-type = ["cdylib"]
+# `rlib` in addition to `cdylib` is what lets `cargo test --lib` link unit
+# tests without trying to resolve Python C-API symbols. The shipped wheel
+# uses the cdylib unchanged.
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-pyo3 = { version = "0.22", features = ["extension-module"] }
+pyo3 = { version = "0.22" }
 numpy = "0.22"
 ndarray = { version = "0.16", features = ["rayon"] }
 rayon = "1.10"
+
+[features]
+# Default builds the wheel-shipping cdylib and tells pyo3 to expect
+# libpython from the host process. `cargo test --no-default-features`
+# disables this so the test binary can link against libpython directly.
+default = ["extension-module"]
+extension-module = ["pyo3/extension-module"]
 
 [profile.release]
 opt-level = 3
