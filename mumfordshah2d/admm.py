@@ -31,6 +31,8 @@ def min_l2_mum_2d(
     rho_coupling: bool = True,
     isotropic: int = 0,
     weights: Optional[ArrayLike] = None,
+    mu_schedule: Optional[ArrayLike] = None,
+    nu_schedule: Optional[ArrayLike] = None,
 ) -> NDArray[np.float64]:
     """Edge-preserving image restoration via the L2 Mumford-Shah model.
 
@@ -128,6 +130,21 @@ def min_l2_mum_2d(
         if (weights_arr < 0).any():
             raise ValueError("weights must be non-negative")
 
+    def _validate_schedule(name: str, val: Optional[ArrayLike]) -> Optional[NDArray[np.float64]]:
+        if val is None:
+            return None
+        a = np.ascontiguousarray(np.asarray(val, dtype=np.float64).ravel())
+        if a.size == 0:
+            raise ValueError(f"{name} must be non-empty")
+        if not np.isfinite(a).all():
+            raise ValueError(f"{name} contains NaN or Inf")
+        if (a < 0).any():
+            raise ValueError(f"{name} must be non-negative")
+        return a
+
+    mu_schedule_arr = _validate_schedule("mu_schedule", mu_schedule)
+    nu_schedule_arr = _validate_schedule("nu_schedule", nu_schedule)
+
     out3 = _rust_min_l2_mum_2d(
         arr3,
         gamma=float(gamma),
@@ -138,6 +155,8 @@ def min_l2_mum_2d(
         rho_coupling=bool(rho_coupling),
         isotropic=int(isotropic),
         weights=weights_arr,
+        mu_schedule=mu_schedule_arr,
+        nu_schedule=nu_schedule_arr,
     )
     if squeeze:
         return out3[0]

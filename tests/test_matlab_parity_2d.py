@@ -54,6 +54,8 @@ def _run_matlab_2d(
     rho_coupling: bool = True,
     isotropic: int = 0,
     weights: np.ndarray = None,
+    mu_schedule: np.ndarray = None,
+    nu_schedule: np.ndarray = None,
 ):
     """Invoke `mumfordShah2D(gamma, alpha, makeProxL2w(f, ones), …)` in host MATLAB
     with the same settings the Rust port uses. Returns the smoothed image.
@@ -88,7 +90,24 @@ def _run_matlab_2d(
             np.savetxt(weights_path, weights, delimiter=",", fmt="%.17e")
             weights_setup = f"weights = readmatrix('{weights_path}');"
 
-        nu_seq_arg = "varargin = {'nuSeq', @(k) 0};" if not rho_coupling else "varargin = {};"
+        # Build varargin for MATLAB: ρ-coupling via 'nuSeq', custom schedules
+        # via per-array variables that the closure indexes with bounds-clamping.
+        schedule_setup_lines = []
+        varargin_parts = []
+        if not rho_coupling:
+            varargin_parts.append("'nuSeq', @(k) 0")
+        if mu_schedule is not None:
+            mu_path = work_dir / "mu_schedule.csv"
+            np.savetxt(mu_path, mu_schedule, fmt="%.17e")
+            schedule_setup_lines.append(f"mu_array = readmatrix('{mu_path}');")
+            varargin_parts.append("'muSeq', @(k) mu_array(min(k, numel(mu_array)))")
+        if nu_schedule is not None and rho_coupling:
+            nu_path = work_dir / "nu_schedule.csv"
+            np.savetxt(nu_path, nu_schedule, fmt="%.17e")
+            schedule_setup_lines.append(f"nu_array = readmatrix('{nu_path}');")
+            varargin_parts.append("'nuSeq', @(k) nu_array(min(k, numel(nu_array)))")
+        schedule_setup = "\n".join(schedule_setup_lines)
+        nu_seq_arg = schedule_setup + "\nvarargin = {" + ", ".join(varargin_parts) + "};"
         script = f"""
 addpath(genpath('{REPO_ROOT}'));
 javaaddpath('{REPO_ROOT}/Java/bin');
@@ -233,6 +252,42 @@ def test_step_4x4_isotropic_2(max_iter, rho_coupling):
     else:
         atol = 1e-9
     npt.assert_allclose(out_rust, out_matlab, atol=atol)
+
+
+def test_step_4x4_custom_mu_schedule():
+    """User-supplied μ schedule (here a linear ramp instead of the
+    MATLAB-default `k².⁰¹·10⁻⁶` quadratic). Confirms the schedule array
+    is wired through to both Rust and MATLAB the same way."""
+    f = np.zeros((1, 4, 4), dtype=np.float64)
+    f[0, :, 2:] = 1.0
+    max_iter = 30
+    mu_schedule = np.linspace(1e-6, 1e-2, max_iter)
+
+    gamma = 0.05
+    alpha = 1e-6
+
+    out_rust = ms_core.min_l2_mum_2d(
+        f,
+        gamma=gamma,
+        alpha=alpha,
+        tol=1e-300,
+        max_iter=max_iter,
+        verbose=False,
+        rho_coupling=False,
+        isotropic=0,
+        mu_schedule=mu_schedule,
+    )
+    out_matlab = _run_matlab_2d(
+        f,
+        gamma=gamma,
+        alpha=alpha,
+        max_iter=max_iter,
+        rho_coupling=False,
+        isotropic=0,
+        mu_schedule=mu_schedule,
+    )
+
+    npt.assert_allclose(out_rust, out_matlab, atol=1e-9)
 
 
 @pytest.mark.parametrize("max_iter", [20, 100])

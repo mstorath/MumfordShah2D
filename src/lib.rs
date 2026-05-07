@@ -60,7 +60,7 @@ fn gauss_l2_mum_cost(y: PyReadonlyArray1<f64>, alpha: f64) -> f64 {
 ///   `max_iter`    iteration cap.
 ///   `verbose`     print per-iteration diagnostics to stderr.
 #[pyfunction]
-#[pyo3(signature = (f, gamma, alpha, tol = 1e-3, max_iter = 50000, verbose = false, rho_coupling = true, isotropic = 0, weights = None))]
+#[pyo3(signature = (f, gamma, alpha, tol = 1e-3, max_iter = 50000, verbose = false, rho_coupling = true, isotropic = 0, weights = None, mu_schedule = None, nu_schedule = None))]
 fn min_l2_mum_2d<'py>(
     py: Python<'py>,
     f: PyReadonlyArray3<f64>,
@@ -72,6 +72,8 @@ fn min_l2_mum_2d<'py>(
     rho_coupling: bool,
     isotropic: u8,
     weights: Option<PyReadonlyArray2<f64>>,
+    mu_schedule: Option<PyReadonlyArray1<f64>>,
+    nu_schedule: Option<PyReadonlyArray1<f64>>,
 ) -> Bound<'py, PyArray3<f64>> {
     let arr = f.as_array().to_owned();
     let img = Image::from_array(arr);
@@ -85,14 +87,35 @@ fn min_l2_mum_2d<'py>(
         2 => 8,
         other => panic!("unsupported isotropic mode {other}; expected 0, 1, or 2"),
     };
-    let nu_seq_default = move |k: usize| default_nu_seq(k, s_count);
+
+    // Closures over schedule data: when the user passes pre-computed arrays
+    // we index them; otherwise fall back to the MATLAB defaults. Schedule
+    // arrays are 1-indexed at the algorithm level (k = 1..=max_iter), so we
+    // subtract 1 when indexing into the 0-indexed Vec. Bounds are clamped
+    // to the last entry — caller may pass a shorter array for diagnostics.
+    let mu_vec: Option<Vec<f64>> = mu_schedule.map(|s| s.as_slice().unwrap().to_vec());
+    let nu_vec: Option<Vec<f64>> = nu_schedule.map(|s| s.as_slice().unwrap().to_vec());
+
+    let mu_seq = move |k: usize| -> f64 {
+        match &mu_vec {
+            None => default_mu_seq(k),
+            Some(v) => v[v.len().min(k).saturating_sub(1).max(0)],
+        }
+    };
+    let nu_seq_default = move |k: usize| -> f64 {
+        match &nu_vec {
+            None => default_nu_seq(k, s_count),
+            Some(v) => v[v.len().min(k).saturating_sub(1).max(0)],
+        }
+    };
+
     let result = match (isotropic, rho_coupling) {
-        (0, true) => admm_4connected_l2_ms(img, gamma, alpha, &prox, default_mu_seq, nu_seq_default, tol, max_iter, verbose),
-        (0, false) => admm_4connected_l2_ms(img, gamma, alpha, &prox, default_mu_seq, no_rho_coupling, tol, max_iter, verbose),
-        (1, true) => admm_8connected_l2_ms(img, gamma, alpha, &prox, default_mu_seq, nu_seq_default, tol, max_iter, verbose),
-        (1, false) => admm_8connected_l2_ms(img, gamma, alpha, &prox, default_mu_seq, no_rho_coupling, tol, max_iter, verbose),
-        (2, true) => admm_knight_l2_ms(img, gamma, alpha, &prox, default_mu_seq, nu_seq_default, tol, max_iter, verbose),
-        (2, false) => admm_knight_l2_ms(img, gamma, alpha, &prox, default_mu_seq, no_rho_coupling, tol, max_iter, verbose),
+        (0, true) => admm_4connected_l2_ms(img, gamma, alpha, &prox, mu_seq, nu_seq_default, tol, max_iter, verbose),
+        (0, false) => admm_4connected_l2_ms(img, gamma, alpha, &prox, mu_seq, no_rho_coupling, tol, max_iter, verbose),
+        (1, true) => admm_8connected_l2_ms(img, gamma, alpha, &prox, mu_seq, nu_seq_default, tol, max_iter, verbose),
+        (1, false) => admm_8connected_l2_ms(img, gamma, alpha, &prox, mu_seq, no_rho_coupling, tol, max_iter, verbose),
+        (2, true) => admm_knight_l2_ms(img, gamma, alpha, &prox, mu_seq, nu_seq_default, tol, max_iter, verbose),
+        (2, false) => admm_knight_l2_ms(img, gamma, alpha, &prox, mu_seq, no_rho_coupling, tol, max_iter, verbose),
         _ => unreachable!(),
     };
     result.data.into_pyarray_bound(py)

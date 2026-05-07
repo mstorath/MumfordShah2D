@@ -2,6 +2,46 @@
 
 ## [Unreleased]
 
+## 0.4.0 — 2026-05-07 (Phase 6 — non-uniform weights + custom schedules)
+
+Closes the last two MATLAB-feature-parity gaps in the Python facade. The
+underlying Rust core already exposed both via traits/closures; this
+release wires them through to Python kwargs.
+
+### Added
+
+- **`weights=` kwarg on `min_l2_mum_2d`.** Per-pixel non-negative
+  weights, shape `(rows, cols)`, broadcast across channels. Mirrors
+  MATLAB's `makeProxL2w(f, weights)`. Pixels with `weights[i,j] == 0`
+  are unobserved (inpainting); the L2 prox at those pixels returns the
+  consensus `z` directly. Validated for shape and non-negativity.
+- **`mu_schedule=`, `nu_schedule=` kwargs**: pre-computed NumPy arrays
+  of length ≤ `max_iter` indexed at iteration `k`. Shorter arrays clamp
+  to the last entry (MATLAB semantics). Default schedules
+  (`k².⁰¹·10⁻⁶` and `μ(k)·S/C(S,2)`) still apply when omitted. Useful
+  for diagnostics, replicating published parameter sweeps, or warm
+  starts. Validated for non-empty / finite / non-negative.
+- **`L2DataProx::with_weights(f, weights)`** Rust constructor.
+
+### Verified
+
+19/19 live MATLAB-parity tests pass:
+  - 16 prior cases (4-conn / 8-conn / knight-move × ρ × max_iter)
+  - 2 weighted-prox cases (max_iter ∈ {20, 100})
+  - 1 custom-μ-schedule case (linear ramp)
+
+### Not yet supported (planned for 0.5.0+)
+
+- **Custom `Prox` via Python callable.** The Rust `admm_l2_ms` accepts
+  any `impl Prox`; the PyO3 wrapper is constrained to `L2DataProx`.
+  Wiring an arbitrary Python callable through PyO3 requires per-iter
+  GIL acquisition and careful error propagation — engineering effort
+  on the order of the weights+schedule work but with smaller user demand
+  (most users denoise; few do custom inverse problems). Defer until a
+  concrete external use case lands.
+- **L1 data fidelity** (`'method', 'L1'` in MATLAB), L0 hard-thresholding,
+  and the inpaint-mask prox. The Auxiliary/makeProx*.m family except L2.
+
 ## 0.3.0 — 2026-05-07 (Phase 5 — full neighbourhood coverage)
 
 Closes the gap between the Rust port and `mumfordShah2D.m`'s feature set:
