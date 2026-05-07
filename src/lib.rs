@@ -9,7 +9,7 @@ mod mumfordshah_1d;
 mod direction_processor;
 mod admm;
 
-use numpy::{IntoPyArray, PyArray1, PyArray3, PyReadonlyArray1, PyReadonlyArray3};
+use numpy::{IntoPyArray, PyArray1, PyArray3, PyReadonlyArray1, PyReadonlyArray2, PyReadonlyArray3};
 use pyo3::prelude::*;
 
 use crate::admm::{
@@ -60,7 +60,7 @@ fn gauss_l2_mum_cost(y: PyReadonlyArray1<f64>, alpha: f64) -> f64 {
 ///   `max_iter`    iteration cap.
 ///   `verbose`     print per-iteration diagnostics to stderr.
 #[pyfunction]
-#[pyo3(signature = (f, gamma, alpha, tol = 1e-3, max_iter = 50000, verbose = false, rho_coupling = true, isotropic = 0))]
+#[pyo3(signature = (f, gamma, alpha, tol = 1e-3, max_iter = 50000, verbose = false, rho_coupling = true, isotropic = 0, weights = None))]
 fn min_l2_mum_2d<'py>(
     py: Python<'py>,
     f: PyReadonlyArray3<f64>,
@@ -71,10 +71,14 @@ fn min_l2_mum_2d<'py>(
     verbose: bool,
     rho_coupling: bool,
     isotropic: u8,
+    weights: Option<PyReadonlyArray2<f64>>,
 ) -> Bound<'py, PyArray3<f64>> {
     let arr = f.as_array().to_owned();
     let img = Image::from_array(arr);
-    let prox = L2DataProx { f: img.clone() };
+    let prox = match weights {
+        None => L2DataProx::new(img.clone()),
+        Some(w) => L2DataProx::with_weights(img.clone(), w.as_array().to_owned()),
+    };
     let s_count: usize = match isotropic {
         0 => 2,
         1 => 4,

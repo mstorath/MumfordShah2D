@@ -33,26 +33,66 @@ pub trait Prox {
     fn apply(&self, z: &Image, lambda: f64, out: &mut Image);
 }
 
-/// Default L2 data fidelity: `min_v ||v - f||² + (lambda/2)||v - z||²`
-/// → `v = (f + (lambda/2) z) / (1 + lambda/2)`. With the convention used
-/// by `mumfordShah2D.m` where the data term is `||u - f||²` (no half),
-/// the prox simplifies to `v = (2 f + lambda z) / (2 + lambda)`. We use
-/// the half-factor convention to match Pottslab's prox style.
+/// Weighted L2 data-fidelity prox. Mirrors `Auxiliary/makeProxL2w.m`:
+///
+///     prox(z, λ) = (w · f + λ · z) / (w + λ)
+///
+/// where `w` are per-pixel weights (broadcast across channels). Pixels
+/// with `w = 0` are treated as unobserved (inpainting); the prox at those
+/// pixels is `z`, completely driven by the consensus.
+///
+/// Construct with `L2DataProx::new(f)` for uniform `weights = 1` (the
+/// default denoising case) or `L2DataProx::with_weights(f, weights)` for
+/// the heteroscedastic / inpainting cases.
 pub struct L2DataProx {
     pub f: Image,
+    /// Per-pixel weights, shape `(rows, cols)`. `None` ≡ all ones.
+    pub weights: Option<ndarray::Array2<f64>>,
+}
+
+impl L2DataProx {
+    pub fn new(f: Image) -> Self {
+        Self { f, weights: None }
+    }
+    pub fn with_weights(f: Image, weights: ndarray::Array2<f64>) -> Self {
+        debug_assert_eq!(
+            weights.shape(),
+            &[f.n_row(), f.n_col()],
+            "weights shape must match (rows, cols)"
+        );
+        Self { f, weights: Some(weights) }
+    }
 }
 
 impl Prox for L2DataProx {
     fn apply(&self, z: &Image, lambda: f64, out: &mut Image) {
         assert_eq!(out.data.shape(), self.f.data.shape());
-        let denom = 1.0 + lambda;
-        for ((slot, fv), zv) in out
-            .data
-            .iter_mut()
-            .zip(self.f.data.iter())
-            .zip(z.data.iter())
-        {
-            *slot = (fv + lambda * zv) / denom;
+        match &self.weights {
+            None => {
+                let denom = 1.0 + lambda;
+                for ((slot, fv), zv) in out
+                    .data
+                    .iter_mut()
+                    .zip(self.f.data.iter())
+                    .zip(z.data.iter())
+                {
+                    *slot = (fv + lambda * zv) / denom;
+                }
+            }
+            Some(w) => {
+                let (channels, n_row, n_col) = (out.channels(), out.n_row(), out.n_col());
+                for c in 0..channels {
+                    for i in 0..n_row {
+                        for j in 0..n_col {
+                            let wv = w[[i, j]];
+                            let denom = wv + lambda;
+                            out.data[[c, i, j]] = (wv * self.f.data[[c, i, j]]
+                                + lambda * z.data[[c, i, j]])
+                                / denom;
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -410,7 +450,7 @@ mod tests {
     #[test]
     fn constant_image_converges_to_itself() {
         let f = make_image(1, 4, 4, |_, _, _| 7.0);
-        let prox = L2DataProx { f: f.clone() };
+        let prox = L2DataProx::new(f.clone());
         let result = admm_4connected_l2_ms(
             f.clone(),
             1.0,
@@ -431,7 +471,7 @@ mod tests {
     fn binary_step_image_recovers_two_segments_at_small_gamma() {
         // 4×4 image, left half 0, right half 1, no noise.
         let f = make_image(1, 4, 4, |_, _, j| if j < 2 { 0.0 } else { 1.0 });
-        let prox = L2DataProx { f: f.clone() };
+        let prox = L2DataProx::new(f.clone());
         let result = admm_4connected_l2_ms(
             f.clone(),
             0.05,

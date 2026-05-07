@@ -14,6 +14,8 @@ behaviour are deferred to a later release.
 
 from __future__ import annotations
 
+from typing import Optional
+
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
@@ -28,6 +30,7 @@ def min_l2_mum_2d(
     verbose: bool = False,
     rho_coupling: bool = True,
     isotropic: int = 0,
+    weights: Optional[ArrayLike] = None,
 ) -> NDArray[np.float64]:
     """Edge-preserving image restoration via the L2 Mumford-Shah model.
 
@@ -114,6 +117,17 @@ def min_l2_mum_2d(
             f"isotropic must be 0 (4-connected), 1 (8-connected), or 2 (knight-move), got {isotropic}"
         )
 
+    weights_arr = None
+    if weights is not None:
+        weights_arr = np.ascontiguousarray(np.asarray(weights, dtype=np.float64))
+        if weights_arr.shape != arr3.shape[1:]:
+            raise ValueError(
+                f"weights must have shape (rows, cols) = {arr3.shape[1:]}, "
+                f"got {weights_arr.shape}"
+            )
+        if (weights_arr < 0).any():
+            raise ValueError("weights must be non-negative")
+
     out3 = _rust_min_l2_mum_2d(
         arr3,
         gamma=float(gamma),
@@ -123,6 +137,7 @@ def min_l2_mum_2d(
         verbose=bool(verbose),
         rho_coupling=bool(rho_coupling),
         isotropic=int(isotropic),
+        weights=weights_arr,
     )
     if squeeze:
         return out3[0]

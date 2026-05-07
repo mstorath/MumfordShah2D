@@ -53,6 +53,7 @@ def _run_matlab_2d(
     *,
     rho_coupling: bool = True,
     isotropic: int = 0,
+    weights: np.ndarray = None,
 ):
     """Invoke `mumfordShah2D(gamma, alpha, makeProxL2w(f, ones), …)` in host MATLAB
     with the same settings the Rust port uses. Returns the smoothed image.
@@ -80,12 +81,19 @@ def _run_matlab_2d(
 
         np.savetxt(in_path, f2d, delimiter=",", fmt="%.17e")
 
+        weights_path = work_dir / "weights.csv"
+        if weights is None:
+            weights_setup = "weights = ones(size(f));"
+        else:
+            np.savetxt(weights_path, weights, delimiter=",", fmt="%.17e")
+            weights_setup = f"weights = readmatrix('{weights_path}');"
+
         nu_seq_arg = "varargin = {'nuSeq', @(k) 0};" if not rho_coupling else "varargin = {};"
         script = f"""
 addpath(genpath('{REPO_ROOT}'));
 javaaddpath('{REPO_ROOT}/Java/bin');
 f = readmatrix('{in_path}');
-weights = ones(size(f));
+{weights_setup}
 prox = makeProxL2w(f, weights);
 {nu_seq_arg}
 [out, nIter] = mumfordShah2D({gamma:.17e}, {alpha:.17e}, prox, ...
@@ -225,6 +233,44 @@ def test_step_4x4_isotropic_2(max_iter, rho_coupling):
     else:
         atol = 1e-9
     npt.assert_allclose(out_rust, out_matlab, atol=atol)
+
+
+@pytest.mark.parametrize("max_iter", [20, 100])
+def test_step_4x4_weighted_prox(max_iter):
+    """Non-uniform per-pixel weights — left half observed (w=1), right half
+    half-weighted (w=0.5). Tests that the weighted L2 prox formula
+    `(w·f + λ·z) / (w + λ)` is wired correctly through the Python facade.
+    Uses ρ-disabled (`nuSeq=@(k) 0`) for tight bit-precise parity."""
+    f = np.zeros((1, 4, 4), dtype=np.float64)
+    f[0, :, 2:] = 1.0
+    weights = np.ones((4, 4), dtype=np.float64)
+    weights[:, 2:] = 0.5
+
+    gamma = 0.05
+    alpha = 1e-6
+
+    out_rust = ms_core.min_l2_mum_2d(
+        f,
+        gamma=gamma,
+        alpha=alpha,
+        tol=1e-300,
+        max_iter=max_iter,
+        verbose=False,
+        rho_coupling=False,
+        isotropic=0,
+        weights=weights,
+    )
+    out_matlab = _run_matlab_2d(
+        f,
+        gamma=gamma,
+        alpha=alpha,
+        max_iter=max_iter,
+        rho_coupling=False,
+        isotropic=0,
+        weights=weights,
+    )
+
+    npt.assert_allclose(out_rust, out_matlab, atol=1e-9)
 
 
 @pytest.mark.parametrize("rho_coupling", [True, False])
