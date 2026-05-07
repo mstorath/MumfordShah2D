@@ -220,6 +220,62 @@ impl Image {
     /// Borrow the underlying ndarray.
     pub fn view(&self) -> ArrayView3<'_, f64> { self.data.view() }
     pub fn view_mut(&mut self) -> ArrayViewMut3<'_, f64> { self.data.view_mut() }
+
+    /// Total number of stripes along `direction` for an image of this shape.
+    /// Matches the per-direction loop bound in
+    /// `Java/src/mumfordShah/AbstractDirectionProcessor.run`.
+    pub fn n_stripes(&self, direction: [i64; 2]) -> i64 {
+        let n_row = self.n_row() as i64;
+        let n_col = self.n_col() as i64;
+        match direction {
+            [1, 0] => n_col,
+            [1, 1] => n_col + (n_row - 1).max(0),
+            [2, 1] => 2 * n_col + (n_row - 2).max(0),
+            [1, 2] => n_col + 2 * (n_row - 1).max(0),
+            d => panic!("unsupported direction {:?}", d),
+        }
+    }
+
+    /// 90° clockwise rotation. Returns a new image of shape `(channels, n_col, n_row)`.
+    /// Used by `mumfordShah2D.m` to swap the role of rows and columns for
+    /// even-indexed S directions, so the same direction processor (which
+    /// always treats `[1, 0]` as vertical stripes — i.e., one column per
+    /// stripe) ends up running over the opposite axis.
+    pub fn rotate90_cw(&self) -> Image {
+        let (c, n_row, n_col) = (self.channels(), self.n_row(), self.n_col());
+        let mut out = Array3::<f64>::zeros((c, n_col, n_row));
+        for d in 0..c {
+            for i in 0..n_row {
+                for j in 0..n_col {
+                    out[[d, j, n_row - 1 - i]] = self.data[[d, i, j]];
+                }
+            }
+        }
+        Image::from_array(out)
+    }
+
+    /// 90° counter-clockwise rotation. Inverse of `rotate90_cw`.
+    pub fn rotate90_ccw(&self) -> Image {
+        let (c, n_row, n_col) = (self.channels(), self.n_row(), self.n_col());
+        let mut out = Array3::<f64>::zeros((c, n_col, n_row));
+        for d in 0..c {
+            for i in 0..n_row {
+                for j in 0..n_col {
+                    out[[d, n_col - 1 - j, i]] = self.data[[d, i, j]];
+                }
+            }
+        }
+        Image::from_array(out)
+    }
+}
+
+/// Named direction stencils used by the 2-D Mumford-Shah driver.
+/// Each `[dx, dy]` is a step in (row, col).
+pub mod directions {
+    pub const ROW_STEP: [i64; 2] = [1, 0]; // (1,0): vertical stripes (one per column)
+    pub const NW_SE: [i64; 2] = [1, 1]; // main diagonal
+    pub const KNIGHT_2_1: [i64; 2] = [2, 1]; // knight move, 2 down 1 right
+    pub const KNIGHT_1_2: [i64; 2] = [1, 2]; // knight move, 1 down 2 right
 }
 
 #[cfg(test)]
@@ -440,5 +496,45 @@ mod tests {
         let v2 = Image::from_array(ndarray::arr3(&[[[1.0, 2.0], [3.0, 4.0]]]));
         // Each entry differs by 1; 4 entries; sum of squares = 4.
         assert_eq!(Image::compute_error(&u, &v2), 4.0);
+    }
+
+    #[test]
+    fn rotate90_cw_then_ccw_is_identity() {
+        let img = Image::from_array(ndarray::arr3(&[[
+            [1.0, 2.0, 3.0],
+            [4.0, 5.0, 6.0],
+        ]]));
+        let back = img.rotate90_cw().rotate90_ccw();
+        assert_eq!(back.data, img.data);
+    }
+
+    #[test]
+    fn rotate90_cw_swaps_rows_and_columns_correctly() {
+        // Hand-check on a 1×2×3 image:
+        //   1 2 3
+        //   4 5 6
+        // CW 90° →
+        //   4 1
+        //   5 2
+        //   6 3
+        let img = Image::from_array(ndarray::arr3(&[[
+            [1.0, 2.0, 3.0],
+            [4.0, 5.0, 6.0],
+        ]]));
+        let r = img.rotate90_cw();
+        assert_eq!(r.data.shape(), &[1, 3, 2]);
+        let expected = ndarray::arr3(&[[[4.0, 1.0], [5.0, 2.0], [6.0, 3.0]]]);
+        assert_eq!(r.data, expected);
+    }
+
+    #[test]
+    fn n_stripes_matches_per_direction_loop_bound() {
+        // 4×6 image → axis-aligned: 6 column-stripes;
+        //   diagonal: 6 + 3 = 9; knight (2,1): 12 + 2 = 14; knight (1,2): 6 + 6 = 12.
+        let img = Image::zeros(1, 4, 6);
+        assert_eq!(img.n_stripes(directions::ROW_STEP), 6);
+        assert_eq!(img.n_stripes(directions::NW_SE), 9);
+        assert_eq!(img.n_stripes(directions::KNIGHT_2_1), 14);
+        assert_eq!(img.n_stripes(directions::KNIGHT_1_2), 12);
     }
 }
