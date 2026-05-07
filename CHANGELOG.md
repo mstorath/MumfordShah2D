@@ -43,13 +43,34 @@ MATLAB driver exposes (subset of cases)."
   --no-default-features` can link unit tests against libpython directly.
   The shipped wheel is unchanged.
 
+### Added (post-initial draft of this CHANGELOG entry)
+
+- **8-connected (near-isotropic) ADMM driver** (`isotropic=1`, S=4: rows
+  + cols + NW-SE diagonals + NE-SW diagonals). Uses the MATLAB-default
+  ω = {√2−1, 1−√2/2} weights for near-isotropic smoothing.
+- **ρ-coupled ADMM variant** matching MATLAB's `rhoFlag=true` default.
+  `min_l2_mum_2d(..., rho_coupling=True)` engages C(S, 2) inter-direction
+  dual variables; `rho_coupling=False` is equivalent to the MATLAB
+  `'nuSeq', @(k) 0` simplification.
+- **`isotropic` and `rho_coupling` kwargs** on the Python facade.
+- **Smoke notebook** at `demos_python/release_smoke_test.ipynb` exercises
+  4-connected vs 8-connected, varying γ, and multi-channel RGB input.
+
+### Verified end-to-end
+
+12 live MATLAB-parity cases pass:
+  - `test_step_4x4` × ρ ∈ {True, False} × max_iter ∈ {20, 100}: 4 cases
+  - `test_step_4x4_isotropic_1` × ρ ∈ {True, False} × max_iter ∈ {20, 100}: 4 cases
+  - `test_constant_image_4x4` × ρ ∈ {True, False} × max_iter ∈ {20, 100}: 4 cases
+Tight `atol=1e-9` for ρ off and at convergence (max_iter=100); intermediate
+`atol=1e-5` for ρ on at low iter counts (transient ADMM iterate divergence
+from floating-point ordering, tightens to 1e-9 by max_iter=100).
+
 ### Not yet supported (planned for 0.3.0+)
 
-- 8-connected (near-isotropic) and knight-move neighbourhoods (S=4 / S=8).
-- The ρ-coupled MATLAB-default behaviour (rhoFlag=true). The current Rust
-  port matches MATLAB only when `nuSeq = @(k) 0` is passed; the default
-  MATLAB call uses inter-direction ρ dual variables that the Rust port
-  doesn't yet implement.
+- Knight-move neighbourhood (`isotropic=2`, S=8). Direction stencils [2,1]
+  and [1,2] are already implemented in the direction processor; only the
+  ADMM wiring is missing.
 - Custom μ schedules and arbitrary prox handles via the Python API.
   (The Rust core already accepts `mu_seq: impl Fn(usize) -> f64` and
   any `impl Prox`; only the PyO3 wrapper is constrained to the defaults.)
