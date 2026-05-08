@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  rust:
+    name: Rust ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        # cargo test on this single-crate repo links libpython (the crate IS
+        # the pyo3 binding, so its #[cfg(test)] modules need a Python interpreter
+        # to link against when extension-module is disabled).
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo fmt
+        run: cargo fmt --all -- --check
+      - name: cargo clippy (advisory)
+        # Clippy runs but doesn't gate the build (no `-D warnings`). The
+        # algorithm code carries pre-existing stylistic debt (long
+        # signatures, range-loop indices, hardcoded π) that we treat as
+        # follow-up. Clean these up in a dedicated `claude/clippy-cleanup`
+        # branch when porting effort allows; no algorithm-touching
+        # auto-fixes here.
+        run: cargo clippy --all-targets --no-default-features
+      - name: cargo test
+        # --lib --tests skips doctests; existing docstrings contain math
+        # notation (λ, μ, etc.) that doesn't parse as Rust and would fail.
+        # --no-default-features turns off `extension-module` so the test
+        # binary links libpython directly instead of expecting to be
+        # loaded from a Python process.
+        run: cargo test --release --no-default-features --lib --tests
+
+  python:
+    name: Python ${{ matrix.python-version }} ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: create and activate venv
+        # maturin develop requires VIRTUAL_ENV. setup-python on Windows
+        # does not set it; create our own venv and export it for all
+        # subsequent steps via $GITHUB_PATH and $GITHUB_ENV.
+        shell: bash
+        run: |
+          python -m venv .venv
+          if [ -d .venv/Scripts ]; then
+            echo "$GITHUB_WORKSPACE/.venv/Scripts" >> "$GITHUB_PATH"
+          else
+            echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
+          fi
+          echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/.venv" >> "$GITHUB_ENV"
+      - name: install build deps
+        run: pip install maturin pytest hypothesis numpy scipy matplotlib pillow
+      - name: maturin develop
+        run: maturin develop --release
+      - name: pytest
+        # Skip MATLAB-parity tests: those require a host matlab shim
+        # (see tests/test_matlab_parity_2d.py); GitHub-hosted runners
+        # don't have it.
+        run: pytest tests -v -k "not matlab_parity"
+      - name: smoke demo
+        run: python demos_python/demo_inpainting.py --smoke

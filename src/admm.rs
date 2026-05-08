@@ -60,7 +60,10 @@ impl L2DataProx {
             &[f.n_row(), f.n_col()],
             "weights shape must match (rows, cols)"
         );
-        Self { f, weights: Some(weights) }
+        Self {
+            f,
+            weights: Some(weights),
+        }
     }
 }
 
@@ -86,9 +89,8 @@ impl Prox for L2DataProx {
                         for j in 0..n_col {
                             let wv = w[[i, j]];
                             let denom = wv + lambda;
-                            out.data[[c, i, j]] = (wv * self.f.data[[c, i, j]]
-                                + lambda * z.data[[c, i, j]])
-                                / denom;
+                            out.data[[c, i, j]] =
+                                (wv * self.f.data[[c, i, j]] + lambda * z.data[[c, i, j]]) / denom;
                         }
                     }
                 }
@@ -129,7 +131,10 @@ where
     MuSeq: Fn(usize) -> f64,
     NuSeq: Fn(usize) -> f64,
 {
-    assert!(!nhood.is_empty(), "nhood must contain at least one direction");
+    assert!(
+        !nhood.is_empty(),
+        "nhood must contain at least one direction"
+    );
     let (channels, n_row, n_col) = (f_data.channels(), f_data.n_row(), f_data.n_col());
     let s_count: usize = 2 * nhood.len();
 
@@ -263,7 +268,9 @@ where
                     // Borrow u[r] and u[t] immutably; rho_pair[idx] mutably.
                     let (ur, ut) = (&u[r], &u[t]);
                     let rho = &mut rho_pair[idx];
-                    for ((slot, urv), utv) in rho.data.iter_mut().zip(ur.data.iter()).zip(ut.data.iter()) {
+                    for ((slot, urv), utv) in
+                        rho.data.iter_mut().zip(ur.data.iter()).zip(ut.data.iter())
+                    {
                         *slot += nu * (urv - utv);
                     }
                 }
@@ -287,9 +294,7 @@ where
         };
 
         if verbose {
-            eprintln!(
-                "iter {k}: mu={mu:.3e}, nu={nu:.3e}, err={err:.3e}, S={s_count}"
-            );
+            eprintln!("iter {k}: mu={mu:.3e}, nu={nu:.3e}, err={err:.3e}, S={s_count}");
         }
 
         if err < tol {
@@ -435,7 +440,12 @@ mod tests {
     use super::*;
     use ndarray::Array3;
 
-    fn make_image(channels: usize, n_row: usize, n_col: usize, fill: impl Fn(usize, usize, usize) -> f64) -> Image {
+    fn make_image(
+        channels: usize,
+        n_row: usize,
+        n_col: usize,
+        fill: impl Fn(usize, usize, usize) -> f64,
+    ) -> Image {
         let mut a = Array3::<f64>::zeros((channels, n_row, n_col));
         for c in 0..channels {
             for i in 0..n_row {

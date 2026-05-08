@@ -75,8 +75,8 @@ impl GaussL2Mum {
 
     fn initialize(&mut self) {
         let alpha = self.alpha;
-        let a = alpha + 1.0;       // boundary diagonal
-        let b = -alpha;            // off-diagonal
+        let a = alpha + 1.0; // boundary diagonal
+        let b = -alpha; // off-diagonal
         let c = 2.0 * alpha + 1.0; // interior diagonal
 
         self.diagonals.clear();
@@ -115,7 +115,9 @@ impl GaussL2Mum {
 }
 
 impl GaussElim for GaussL2Mum {
-    fn alpha(&self) -> f64 { self.alpha }
+    fn alpha(&self) -> f64 {
+        self.alpha
+    }
 
     /// Solve `A μ = y` where `A` is the L2-Mumford-Shah tridiagonal of
     /// length `y.len()` using the cached LU factors. Direct port of
@@ -180,8 +182,12 @@ mod tests {
         for i in 0..n {
             let diag = if i == 0 || i == n - 1 { a_d } else { c_d };
             m[i][i] = diag;
-            if i > 0 { m[i][i - 1] = b_d; }
-            if i < n - 1 { m[i][i + 1] = b_d; }
+            if i > 0 {
+                m[i][i - 1] = b_d;
+            }
+            if i < n - 1 {
+                m[i][i + 1] = b_d;
+            }
             m[i][n] = y[i];
         }
         // Forward elimination.
@@ -210,7 +216,14 @@ mod tests {
         assert_eq!(a.len(), b.len());
         for i in 0..a.len() {
             let diff = (a[i] - b[i]).abs();
-            assert!(diff <= tol, "idx {}: {} vs {} (diff {})", i, a[i], b[i], diff);
+            assert!(
+                diff <= tol,
+                "idx {}: {} vs {} (diff {})",
+                i,
+                a[i],
+                b[i],
+                diff
+            );
         }
     }
 
@@ -234,7 +247,9 @@ mod tests {
             &[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
             &[1.5, -1.5, 0.5, -0.25, 2.0],
             &[3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0],
-        ].iter() {
+        ]
+        .iter()
+        {
             let mu = g.compute_mu(y);
             let want = solve_dense(y, alpha);
             assert_close(&mu, &want, 1e-10);
@@ -316,10 +331,14 @@ mod tests {
         let mut state: u64 = 0xC0FFEE;
         for _ in 0..50 {
             // Trivial LCG to avoid pulling in a PRNG dep.
-            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             let mut perturb = vec![0.0_f64; mu.len()];
             for v in perturb.iter_mut() {
-                state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                state = state
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
                 let r = ((state >> 33) as f64 / (1u64 << 31) as f64) - 1.0;
                 *v = r * 1e-3;
             }

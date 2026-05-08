@@ -293,8 +293,14 @@ mod tests {
         // each half.
         let f = vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0];
         let u = solve_scalar(&f, 0.01, 0.0);
-        assert!(u.iter().take(4).all(|&v| v.abs() < 1e-12), "left half: {u:?}");
-        assert!(u.iter().skip(4).all(|&v| (v - 1.0).abs() < 1e-12), "right half: {u:?}");
+        assert!(
+            u.iter().take(4).all(|&v| v.abs() < 1e-12),
+            "left half: {u:?}"
+        );
+        assert!(
+            u.iter().skip(4).all(|&v| (v - 1.0).abs() < 1e-12),
+            "right half: {u:?}"
+        );
     }
 
     #[test]

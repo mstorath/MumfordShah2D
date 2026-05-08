@@ -61,7 +61,12 @@ mod tests {
     use crate::image::{directions, Image};
     use ndarray::Array3;
 
-    fn make_image(channels: usize, n_row: usize, n_col: usize, fill: impl Fn(usize, usize, usize) -> f64) -> Image {
+    fn make_image(
+        channels: usize,
+        n_row: usize,
+        n_col: usize,
+        fill: impl Fn(usize, usize, usize) -> f64,
+    ) -> Image {
         let mut a = Array3::<f64>::zeros((channels, n_row, n_col));
         for c in 0..channels {
             for i in 0..n_row {

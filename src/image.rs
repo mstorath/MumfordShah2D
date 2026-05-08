@@ -28,13 +28,25 @@ pub struct Point {
 
 impl Point {
     pub fn new(position: i64, value: f64, gradient: f64) -> Self {
-        Self { position, value, gradient }
+        Self {
+            position,
+            value,
+            gradient,
+        }
     }
 
-    pub fn position(&self) -> i64 { self.position }
-    pub fn value(&self) -> f64 { self.value }
-    pub fn gradient(&self) -> f64 { self.gradient }
-    pub fn set_gradient(&mut self, g: f64) { self.gradient = g; }
+    pub fn position(&self) -> i64 {
+        self.position
+    }
+    pub fn value(&self) -> f64 {
+        self.value
+    }
+    pub fn gradient(&self) -> f64 {
+        self.gradient
+    }
+    pub fn set_gradient(&mut self, g: f64) {
+        self.gradient = g;
+    }
 }
 
 /// 3-D image stored as `(channels, rows, cols)`. Mirrors the Java `Image`
@@ -51,15 +63,25 @@ pub struct Image {
 impl Image {
     /// Allocate a zero image of the given shape.
     pub fn zeros(channels: usize, n_row: usize, n_col: usize) -> Self {
-        Self { data: Array3::zeros((channels, n_row, n_col)) }
+        Self {
+            data: Array3::zeros((channels, n_row, n_col)),
+        }
     }
 
     /// Wrap an existing `(channels, rows, cols)` array.
-    pub fn from_array(data: Array3<f64>) -> Self { Self { data } }
+    pub fn from_array(data: Array3<f64>) -> Self {
+        Self { data }
+    }
 
-    pub fn channels(&self) -> usize { self.data.shape()[0] }
-    pub fn n_row(&self) -> usize { self.data.shape()[1] }
-    pub fn n_col(&self) -> usize { self.data.shape()[2] }
+    pub fn channels(&self) -> usize {
+        self.data.shape()[0]
+    }
+    pub fn n_row(&self) -> usize {
+        self.data.shape()[1]
+    }
+    pub fn n_col(&self) -> usize {
+        self.data.shape()[2]
+    }
 
     /// Get a single row across all channels: shape `(channels, n_col)`.
     pub fn get_row(&self, index: usize) -> Array2<f64> {
@@ -109,7 +131,11 @@ impl Image {
 
     /// Squared Euclidean error between two images.
     pub fn compute_error(u: &Image, v: &Image) -> f64 {
-        assert_eq!(u.data.shape(), v.data.shape(), "Images must have the same shape");
+        assert_eq!(
+            u.data.shape(),
+            v.data.shape(),
+            "Images must have the same shape"
+        );
         let mut err = 0.0;
         for ((a, b), _) in u.data.iter().zip(v.data.iter()).zip(0..) {
             let d = a - b;
@@ -218,8 +244,12 @@ impl Image {
     }
 
     /// Borrow the underlying ndarray.
-    pub fn view(&self) -> ArrayView3<'_, f64> { self.data.view() }
-    pub fn view_mut(&mut self) -> ArrayViewMut3<'_, f64> { self.data.view_mut() }
+    pub fn view(&self) -> ArrayView3<'_, f64> {
+        self.data.view()
+    }
+    pub fn view_mut(&mut self) -> ArrayViewMut3<'_, f64> {
+        self.data.view_mut()
+    }
 
     /// Total number of stripes along `direction` for an image of this shape.
     /// Matches the per-direction loop bound in
@@ -386,7 +416,7 @@ mod tests {
     #[test]
     fn direction_knight_2_1_top_band() {
         // [2,1] stencil with idx < n_col: start (0, idx), step (2, 1).
-        let img = checker_image(7, 5);  // n_row=7, n_col=5
+        let img = checker_image(7, 5); // n_row=7, n_col=5
 
         // idx=1 → start (0, 1). Length = min(ceil((7-0)/2), ceil((5-1)/1)) = min(4, 4) = 4.
         let line = img.get_direction([2, 1], 1);
@@ -416,7 +446,7 @@ mod tests {
     #[test]
     fn direction_knight_1_2_top_band() {
         // [1,2] stencil with idx < n_col: start (0, idx), step (1, 2).
-        let img = checker_image(5, 7);  // n_row=5, n_col=7
+        let img = checker_image(5, 7); // n_row=5, n_col=7
 
         // idx=1 → start (0, 1). Length = min(ceil(5/1), ceil((7-1)/2)) = min(5, 3) = 3.
         let line = img.get_direction([1, 2], 1);
@@ -500,10 +530,7 @@ mod tests {
 
     #[test]
     fn rotate90_cw_then_ccw_is_identity() {
-        let img = Image::from_array(ndarray::arr3(&[[
-            [1.0, 2.0, 3.0],
-            [4.0, 5.0, 6.0],
-        ]]));
+        let img = Image::from_array(ndarray::arr3(&[[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]]));
         let back = img.rotate90_cw().rotate90_ccw();
         assert_eq!(back.data, img.data);
     }
@@ -517,10 +544,7 @@ mod tests {
         //   4 1
         //   5 2
         //   6 3
-        let img = Image::from_array(ndarray::arr3(&[[
-            [1.0, 2.0, 3.0],
-            [4.0, 5.0, 6.0],
-        ]]));
+        let img = Image::from_array(ndarray::arr3(&[[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]]));
         let r = img.rotate90_cw();
         assert_eq!(r.data.shape(), &[1, 3, 2]);
         let expected = ndarray::arr3(&[[[4.0, 1.0], [5.0, 2.0], [6.0, 3.0]]]);

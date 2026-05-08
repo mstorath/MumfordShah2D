@@ -3,13 +3,16 @@
 //
 // PyO3 module: exposes Phase 1 Rust primitives to Python.
 
-mod image;
-mod gauss_elim;
-mod mumfordshah_1d;
-mod direction_processor;
 mod admm;
+mod direction_processor;
+mod gauss_elim;
+mod image;
+mod mumfordshah_1d;
 
-use numpy::{IntoPyArray, PyArray1, PyArray3, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2, PyReadonlyArray3};
+use numpy::{
+    IntoPyArray, PyArray1, PyArray3, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2,
+    PyReadonlyArray3,
+};
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
 
@@ -46,9 +49,9 @@ impl Prox for PyProx {
                 .call1(py, (z_arr, lambda))
                 .expect("python prox raised");
             let bound = result.bind(py);
-            let pyarr = bound
-                .downcast::<PyArray3<f64>>()
-                .expect("python prox must return a float64 ndarray of shape (channels, rows, cols)");
+            let pyarr = bound.downcast::<PyArray3<f64>>().expect(
+                "python prox must return a float64 ndarray of shape (channels, rows, cols)",
+            );
             let readonly = pyarr.readonly();
             let view = readonly.as_array();
             assert_eq!(
@@ -85,12 +88,48 @@ where
     Nu: Fn(usize) -> f64,
 {
     match (isotropic, rho_coupling) {
-        (0, true) => admm_4connected_l2_ms(img, gamma, alpha, prox, mu_seq, nu_seq, tol, max_iter, verbose),
-        (0, false) => admm_4connected_l2_ms(img, gamma, alpha, prox, mu_seq, no_rho_coupling, tol, max_iter, verbose),
-        (1, true) => admm_8connected_l2_ms(img, gamma, alpha, prox, mu_seq, nu_seq, tol, max_iter, verbose),
-        (1, false) => admm_8connected_l2_ms(img, gamma, alpha, prox, mu_seq, no_rho_coupling, tol, max_iter, verbose),
-        (2, true) => admm_knight_l2_ms(img, gamma, alpha, prox, mu_seq, nu_seq, tol, max_iter, verbose),
-        (2, false) => admm_knight_l2_ms(img, gamma, alpha, prox, mu_seq, no_rho_coupling, tol, max_iter, verbose),
+        (0, true) => admm_4connected_l2_ms(
+            img, gamma, alpha, prox, mu_seq, nu_seq, tol, max_iter, verbose,
+        ),
+        (0, false) => admm_4connected_l2_ms(
+            img,
+            gamma,
+            alpha,
+            prox,
+            mu_seq,
+            no_rho_coupling,
+            tol,
+            max_iter,
+            verbose,
+        ),
+        (1, true) => admm_8connected_l2_ms(
+            img, gamma, alpha, prox, mu_seq, nu_seq, tol, max_iter, verbose,
+        ),
+        (1, false) => admm_8connected_l2_ms(
+            img,
+            gamma,
+            alpha,
+            prox,
+            mu_seq,
+            no_rho_coupling,
+            tol,
+            max_iter,
+            verbose,
+        ),
+        (2, true) => admm_knight_l2_ms(
+            img, gamma, alpha, prox, mu_seq, nu_seq, tol, max_iter, verbose,
+        ),
+        (2, false) => admm_knight_l2_ms(
+            img,
+            gamma,
+            alpha,
+            prox,
+            mu_seq,
+            no_rho_coupling,
+            tol,
+            max_iter,
+            verbose,
+        ),
         _ => unreachable!(),
     }
 }
@@ -194,14 +233,38 @@ fn min_l2_mum_2d<'py>(
     let result = match prox {
         Some(callable) => {
             let p = PyProx { callable };
-            run_2d_admm(img, gamma, alpha, &p, mu_seq, nu_seq_default, isotropic, rho_coupling, tol, max_iter, verbose)
+            run_2d_admm(
+                img,
+                gamma,
+                alpha,
+                &p,
+                mu_seq,
+                nu_seq_default,
+                isotropic,
+                rho_coupling,
+                tol,
+                max_iter,
+                verbose,
+            )
         }
         None => {
             let p = match weights {
                 None => L2DataProx::new(img.clone()),
                 Some(w) => L2DataProx::with_weights(img.clone(), w.as_array().to_owned()),
             };
-            run_2d_admm(img, gamma, alpha, &p, mu_seq, nu_seq_default, isotropic, rho_coupling, tol, max_iter, verbose)
+            run_2d_admm(
+                img,
+                gamma,
+                alpha,
+                &p,
+                mu_seq,
+                nu_seq_default,
+                isotropic,
+                rho_coupling,
+                tol,
+                max_iter,
+                verbose,
+            )
         }
     };
     Ok(result.data.into_pyarray(py))
