@@ -35,7 +35,7 @@ fn gauss_l2_mum_solve<'py>(
     let n = y_slice.len().max(1);
     let g = GaussL2Mum::new(n, alpha);
     let mu = g.compute_mu(y_slice);
-    mu.into_pyarray_bound(py)
+    mu.into_pyarray(py)
 }
 
 /// Compute the within-segment cost
@@ -118,7 +118,7 @@ fn min_l2_mum_2d<'py>(
         (2, false) => admm_knight_l2_ms(img, gamma, alpha, &prox, mu_seq, no_rho_coupling, tol, max_iter, verbose),
         _ => unreachable!(),
     };
-    result.data.into_pyarray_bound(py)
+    result.data.into_pyarray(py)
 }
 
 #[pymodule]
