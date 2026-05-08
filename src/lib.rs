@@ -9,15 +9,91 @@ mod mumfordshah_1d;
 mod direction_processor;
 mod admm;
 
-use numpy::{IntoPyArray, PyArray1, PyArray3, PyReadonlyArray1, PyReadonlyArray2, PyReadonlyArray3};
+use numpy::{IntoPyArray, PyArray1, PyArray3, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2, PyReadonlyArray3};
 use pyo3::prelude::*;
+use pyo3::types::PyAny;
 
 use crate::admm::{
     admm_4connected_l2_ms, admm_8connected_l2_ms, admm_knight_l2_ms, default_mu_seq,
-    default_nu_seq, no_rho_coupling, L2DataProx,
+    default_nu_seq, no_rho_coupling, L2DataProx, Prox,
 };
 use crate::gauss_elim::{GaussElim, GaussL2Mum};
 use crate::image::Image;
+
+/// Adapter that lets a Python callable act as a Rust `Prox`.
+///
+/// On each call to `apply` the GIL is acquired, the consensus image `z`
+/// is exposed as a `(channels, rows, cols)` numpy array, and the caller
+/// is invoked as `callable(z, lambda)` exactly like the Python prox
+/// factories return (see `mumfordshah2d/prox.py`). The returned numpy
+/// array is copied into `out`.
+///
+/// One GIL crossing per outer ADMM iteration. Acceptable for the four
+/// MATLAB-canonical proxes (closed-form NumPy ops); a Rust-native
+/// dispatch is available for performance via `weights=` (which builds
+/// `L2DataProx` directly without going through Python).
+struct PyProx {
+    callable: Py<PyAny>,
+}
+
+impl Prox for PyProx {
+    fn apply(&self, z: &Image, lambda: f64, out: &mut Image) {
+        Python::with_gil(|py| {
+            let z_owned = z.data.clone();
+            let z_arr = z_owned.into_pyarray(py);
+            let result = self
+                .callable
+                .call1(py, (z_arr, lambda))
+                .expect("python prox raised");
+            let bound = result.bind(py);
+            let pyarr = bound
+                .downcast::<PyArray3<f64>>()
+                .expect("python prox must return a float64 ndarray of shape (channels, rows, cols)");
+            let readonly = pyarr.readonly();
+            let view = readonly.as_array();
+            assert_eq!(
+                view.shape(),
+                out.data.shape(),
+                "python prox returned shape {:?}, expected {:?}",
+                view.shape(),
+                out.data.shape()
+            );
+            out.data.assign(&view);
+        });
+    }
+}
+
+/// Dispatch on `(isotropic, rho_coupling)` for any concrete `Prox` impl.
+/// The four MATLAB combinations are listed explicitly; Rust monomorphises
+/// them per-prox-type.
+fn run_2d_admm<P, Mu, Nu>(
+    img: Image,
+    gamma: f64,
+    alpha: f64,
+    prox: &P,
+    mu_seq: Mu,
+    nu_seq: Nu,
+    isotropic: u8,
+    rho_coupling: bool,
+    tol: f64,
+    max_iter: usize,
+    verbose: bool,
+) -> Image
+where
+    P: Prox,
+    Mu: Fn(usize) -> f64,
+    Nu: Fn(usize) -> f64,
+{
+    match (isotropic, rho_coupling) {
+        (0, true) => admm_4connected_l2_ms(img, gamma, alpha, prox, mu_seq, nu_seq, tol, max_iter, verbose),
+        (0, false) => admm_4connected_l2_ms(img, gamma, alpha, prox, mu_seq, no_rho_coupling, tol, max_iter, verbose),
+        (1, true) => admm_8connected_l2_ms(img, gamma, alpha, prox, mu_seq, nu_seq, tol, max_iter, verbose),
+        (1, false) => admm_8connected_l2_ms(img, gamma, alpha, prox, mu_seq, no_rho_coupling, tol, max_iter, verbose),
+        (2, true) => admm_knight_l2_ms(img, gamma, alpha, prox, mu_seq, nu_seq, tol, max_iter, verbose),
+        (2, false) => admm_knight_l2_ms(img, gamma, alpha, prox, mu_seq, no_rho_coupling, tol, max_iter, verbose),
+        _ => unreachable!(),
+    }
+}
 
 /// Solve the L2-Mumford-Shah within-segment smoothing problem
 /// `min_μ Σ(y_i - μ_i)² + α Σ(μ_{i+1} - μ_i)²` with cached LU.
@@ -60,7 +136,7 @@ fn gauss_l2_mum_cost(y: PyReadonlyArray1<f64>, alpha: f64) -> f64 {
 ///   `max_iter`    iteration cap.
 ///   `verbose`     print per-iteration diagnostics to stderr.
 #[pyfunction]
-#[pyo3(signature = (f, gamma, alpha, tol = 1e-3, max_iter = 50000, verbose = false, rho_coupling = true, isotropic = 0, weights = None, mu_schedule = None, nu_schedule = None))]
+#[pyo3(signature = (f, gamma, alpha, tol = 1e-3, max_iter = 50000, verbose = false, rho_coupling = true, isotropic = 0, weights = None, mu_schedule = None, nu_schedule = None, prox = None))]
 fn min_l2_mum_2d<'py>(
     py: Python<'py>,
     f: PyReadonlyArray3<f64>,
@@ -74,18 +150,24 @@ fn min_l2_mum_2d<'py>(
     weights: Option<PyReadonlyArray2<f64>>,
     mu_schedule: Option<PyReadonlyArray1<f64>>,
     nu_schedule: Option<PyReadonlyArray1<f64>>,
-) -> Bound<'py, PyArray3<f64>> {
+    prox: Option<Py<PyAny>>,
+) -> PyResult<Bound<'py, PyArray3<f64>>> {
+    if prox.is_some() && weights.is_some() {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "pass either `prox` (an arbitrary callable) or `weights` (for the built-in L2 prox), not both",
+        ));
+    }
     let arr = f.as_array().to_owned();
     let img = Image::from_array(arr);
-    let prox = match weights {
-        None => L2DataProx::new(img.clone()),
-        Some(w) => L2DataProx::with_weights(img.clone(), w.as_array().to_owned()),
-    };
     let s_count: usize = match isotropic {
         0 => 2,
         1 => 4,
         2 => 8,
-        other => panic!("unsupported isotropic mode {other}; expected 0, 1, or 2"),
+        other => {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "unsupported isotropic mode {other}; expected 0, 1, or 2"
+            )))
+        }
     };
 
     // Closures over schedule data: when the user passes pre-computed arrays
@@ -109,16 +191,20 @@ fn min_l2_mum_2d<'py>(
         }
     };
 
-    let result = match (isotropic, rho_coupling) {
-        (0, true) => admm_4connected_l2_ms(img, gamma, alpha, &prox, mu_seq, nu_seq_default, tol, max_iter, verbose),
-        (0, false) => admm_4connected_l2_ms(img, gamma, alpha, &prox, mu_seq, no_rho_coupling, tol, max_iter, verbose),
-        (1, true) => admm_8connected_l2_ms(img, gamma, alpha, &prox, mu_seq, nu_seq_default, tol, max_iter, verbose),
-        (1, false) => admm_8connected_l2_ms(img, gamma, alpha, &prox, mu_seq, no_rho_coupling, tol, max_iter, verbose),
-        (2, true) => admm_knight_l2_ms(img, gamma, alpha, &prox, mu_seq, nu_seq_default, tol, max_iter, verbose),
-        (2, false) => admm_knight_l2_ms(img, gamma, alpha, &prox, mu_seq, no_rho_coupling, tol, max_iter, verbose),
-        _ => unreachable!(),
+    let result = match prox {
+        Some(callable) => {
+            let p = PyProx { callable };
+            run_2d_admm(img, gamma, alpha, &p, mu_seq, nu_seq_default, isotropic, rho_coupling, tol, max_iter, verbose)
+        }
+        None => {
+            let p = match weights {
+                None => L2DataProx::new(img.clone()),
+                Some(w) => L2DataProx::with_weights(img.clone(), w.as_array().to_owned()),
+            };
+            run_2d_admm(img, gamma, alpha, &p, mu_seq, nu_seq_default, isotropic, rho_coupling, tol, max_iter, verbose)
+        }
     };
-    result.data.into_pyarray(py)
+    Ok(result.data.into_pyarray(py))
 }
 
 #[pymodule]

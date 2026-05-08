@@ -1,6 +1,6 @@
 [package]
 name = "_mumfordshah2d_core"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
 description = "Rust core for mumfordshah2d Python package — ported from Java by Claude Sonnet coding agent (Anthropic, 2026)"
 authors = [

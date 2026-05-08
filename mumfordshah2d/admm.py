@@ -14,7 +14,7 @@ behaviour are deferred to a later release.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Callable, Optional
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -33,6 +33,7 @@ def min_l2_mum_2d(
     weights: Optional[ArrayLike] = None,
     mu_schedule: Optional[ArrayLike] = None,
     nu_schedule: Optional[ArrayLike] = None,
+    prox: Optional[Callable[..., np.ndarray]] = None,
 ) -> NDArray[np.float64]:
     """Edge-preserving image restoration via the L2 Mumford-Shah model.
 
@@ -119,6 +120,13 @@ def min_l2_mum_2d(
             f"isotropic must be 0 (4-connected), 1 (8-connected), or 2 (knight-move), got {isotropic}"
         )
 
+    if prox is not None and weights is not None:
+        raise ValueError(
+            "pass either `prox` (an arbitrary callable) or `weights` (for the built-in L2 prox), not both"
+        )
+    if prox is not None and not callable(prox):
+        raise TypeError(f"prox must be callable, got {type(prox).__name__}")
+
     weights_arr = None
     if weights is not None:
         weights_arr = np.ascontiguousarray(np.asarray(weights, dtype=np.float64))
@@ -129,6 +137,21 @@ def min_l2_mum_2d(
             )
         if (weights_arr < 0).any():
             raise ValueError("weights must be non-negative")
+
+    # Bridge user-facing shape to the (channels, rows, cols) layout the Rust
+    # core hands back. Prox factories in mumfordshah2d.prox close over `f` in
+    # whatever shape the user provided; Rust always passes z channels-first.
+    prox_callable = None
+    if prox is not None:
+        user_prox = prox
+        if squeeze:
+            def prox_callable(z, lam):  # noqa: E306 — closure assignment
+                return user_prox(z[0], lam)[np.newaxis, :, :]
+        else:
+            def prox_callable(z, lam):  # noqa: E306
+                z_user = np.transpose(z, (1, 2, 0))
+                r = user_prox(z_user, lam)
+                return np.ascontiguousarray(np.transpose(r, (2, 0, 1)))
 
     def _validate_schedule(name: str, val: Optional[ArrayLike]) -> Optional[NDArray[np.float64]]:
         if val is None:
@@ -157,6 +180,7 @@ def min_l2_mum_2d(
         weights=weights_arr,
         mu_schedule=mu_schedule_arr,
         nu_schedule=nu_schedule_arr,
+        prox=prox_callable,
     )
     if squeeze:
         return out3[0]

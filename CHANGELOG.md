@@ -2,6 +2,58 @@
 
 ## [Unreleased]
 
+## 0.5.0 — 2026-05-08 (Phase 7 — user-supplied prox + first inpainting demo)
+
+Closes the v0.4.0 "Not yet supported" item. Users can now pass any of the
+four MATLAB-canonical prox handles (or any custom callable with the same
+contract) directly to `min_l2_mum_2d`. The Rust core's `Prox` trait is
+now reachable from Python via a PyO3 callback bridge.
+
+### Added
+
+- **`prox=` kwarg on `min_l2_mum_2d`.** Accepts any callable with
+  signature `prox(z, lambda) -> ndarray`, matching the factories in
+  `mumfordshah2d.prox` (`make_prox_l2w`, `make_prox_l1w`, `make_prox_l0w`,
+  `make_prox_inpaint`). The Python facade transparently bridges the
+  user-facing array layout (`(rows, cols, channels)` or 2-D grayscale)
+  to the Rust core's `(channels, rows, cols)` layout, so user-supplied
+  prox factories can close over `f` in whatever shape they were
+  constructed against.
+- **`PyProx` Rust adapter** (in `src/lib.rs`) wrapping a `Py<PyAny>` as a
+  `Prox` impl. One GIL acquisition per outer ADMM iteration. Acceptable
+  for the four MATLAB-canonical proxes (closed-form NumPy ops); for
+  inner loops the Rust-native `L2DataProx` (via `weights=`) remains
+  available with no GIL crossings.
+- **`demos_python/demo_inpainting.py`** — Python port of
+  `Demos/demoInpainting.m`. Loads `fruitsColor.jpg`, generates a 60%
+  random binary mask, restores via `make_prox_l2w(corrupted, mask)` +
+  knight-move ADMM. Includes a `--smoke` mode for CI.
+
+### Tested
+
+- New `tests/test_prox_admm_integration.py` with 6 tests including a
+  bit-identical regression check: `prox=make_prox_l2w(f, ones)` MUST
+  produce the same array as the default `weights=None` path. Any drift
+  in the PyProx bridge or the shape-shim layer surfaces immediately.
+- Conflicts (`prox=` and `weights=` both passed) raise `ValueError` at
+  the Python layer; non-callable `prox` raises `TypeError`.
+- 155 pre-existing tests still pass (full suite minus matlab-parity
+  which is host-shim-dependent).
+
+### Security
+
+- Built against `pyo3 >= 0.24.1` (closes GHSA-pph8-gcv7-4qj5,
+  `PyString::from_object` buffer-overread). Also pins `numpy = 0.24`.
+
+### Not yet supported (planned for 0.6.0+)
+
+- **`makeProxL2Linop` / operator-stack prox** for deconvolution. Needs
+  an iterative linear solver (CG/LSQR) per outer iteration and a
+  warm-start contract on the prox `init` argument. Open questions on
+  solver choice (SciPy callback vs. Rust-native `nalgebra-sparse`) and
+  operator API (callable vs. matrix-free FFT for convolution).
+- **Port of `Demos/demoDeconv*.m`** — blocked on the above.
+
 ## 0.4.0 — 2026-05-07 (Phase 6 — non-uniform weights + custom schedules)
 
 Closes the last two MATLAB-feature-parity gaps in the Python facade. The
