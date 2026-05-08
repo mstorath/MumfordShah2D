@@ -1,0 +1,37 @@
+[package]
+name = "_mumfordshah2d_core"
+version = "0.5.0"
+edition = "2021"
+description = "Rust core for mumfordshah2d Python package — ported from Java by Claude Sonnet coding agent (Anthropic, 2026)"
+authors = [
+    "Kilian Hohm (original Java)",
+    "Martin Storath <storath@gmail.com> (original Java)",
+    "Andreas Weinmann (original Java)",
+    "Claude Sonnet coding agent, Anthropic (Rust port, 2026)"
+]
+license = "MIT"
+repository = "https://github.com/mstorath/MumfordShah2D"
+
+[lib]
+name = "_mumfordshah2d_core"
+# `rlib` in addition to `cdylib` is what lets `cargo test --lib` link unit
+# tests without trying to resolve Python C-API symbols. The shipped wheel
+# uses the cdylib unchanged.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pyo3 = { version = "0.24.1" }
+numpy = "0.24"
+ndarray = { version = "0.16", features = ["rayon"] }
+rayon = "1.10"
+
+[features]
+# Default builds the wheel-shipping cdylib and tells pyo3 to expect
+# libpython from the host process. `cargo test --no-default-features`
+# disables this so the test binary can link against libpython directly.
+default = ["extension-module"]
+extension-module = ["pyo3/extension-module"]
+
+[profile.release]
+opt-level = 3
+lto = true
