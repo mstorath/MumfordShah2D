@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## 0.5.1 — 2026-05-08 (release fix — aarch64 cross-compile)
+
+### Fixed
+
+- **`pyo3` now built with the `abi3-py39` feature.** Without it, the
+  release workflow's `linux (aarch64)` job failed with
+  `Couldn't find any python interpreters` because maturin's QEMU
+  cross-compile container has no aarch64 Python interpreter to detect.
+  `abi3-py39` targets the stable Python ABI from 3.9 onward, removing
+  the version-detection requirement and producing a single wheel that
+  works on every Python ≥ 3.9 (matches the CSSD release pattern).
+- The `0.5.0` tag exists on origin but produced no PyPI artifact
+  (publish job skipped after the wheel job failed). `0.5.1` is the
+  first version to actually reach PyPI.
+
 ## 0.5.0 — 2026-05-08 (Phase 7 — user-supplied prox + first inpainting demo)
 
 Closes the v0.4.0 "Not yet supported" item. Users can now pass any of the
