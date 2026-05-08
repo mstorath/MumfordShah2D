@@ -1,6 +1,6 @@
 [package]
 name = "_mumfordshah2d_core"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2021"
 description = "Rust core for mumfordshah2d Python package — ported from Java by Claude Sonnet coding agent (Anthropic, 2026)"
 authors = [
@@ -20,7 +20,7 @@ name = "_mumfordshah2d_core"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-pyo3 = { version = "0.24.1" }
+pyo3 = { version = "0.24.1", features = ["abi3-py39"] }
 numpy = "0.24"
 ndarray = { version = "0.16", features = ["rayon"] }
 rayon = "1.10"
