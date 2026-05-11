@@ -34,37 +34,44 @@ pip install -e .
 
 ```python
 import mumfordshah2d
-print(mumfordshah2d.__version__)             # 0.1.0
+print(mumfordshah2d.__version__)             # 0.5.2
 print(mumfordshah2d.__original_authors__)    # Kilian Hohm, Martin Storath, Andreas Weinmann
 
 import numpy as np
-from mumfordshah2d import gauss_l2_mum_solve
+from mumfordshah2d import min_l2_mum_2d
 
-# L2-Mumford-Shah within-segment smoothing on a noisy step:
-y = np.array([0.0, 0.1, -0.05, 1.05, 0.95, 1.1])
-mu = gauss_l2_mum_solve(y, alpha=2.0)
-print(mu)
+# 2-D L2 Mumford-Shah ADMM on a noisy step image:
+H, W = 32, 32
+f = np.zeros((H, W))
+f[:, W // 2:] = 1.0
+f += np.random.default_rng(0).normal(0, 0.1, size=f.shape)
+
+u = min_l2_mum_2d(f, gamma=0.5, alpha=1.0)
+print(u.shape, u.dtype)
 ```
 
-## What's currently exported
+## Currently exported
 
 ```python
-# Utilities
+# 2-D ADMM driver (port of mumfordShah2D.m)
+min_l2_mum_2d(f, gamma, alpha, *, tol=1e-3, max_iter=50000)
+
+# Utilities (port of MATLAB Auxiliary/*.m)
 soft_threshold, hard_threshold, expand_weights, rotate90, psnr
 
-# Prox handles for the ADMM data-fidelity term
+# Prox handles for the ADMM data-fidelity term (port of Auxiliary/makeProx*.m)
 make_prox_l2w, make_prox_l1w, make_prox_l0w, make_prox_inpaint
 
-# Phase 1 Rust primitive (exposed for testing)
-gauss_l2_mum_solve
+# Rust primitives (exposed for testing)
+gauss_l2_mum_solve, gauss_l2_mum_cost
 
 # Metadata
 __version__, __original_authors__, __ported_by__
 ```
 
-The full public API (`min_l2_l2_mumford_shah_2d` etc.) ships in Phase 4. Until
-then, **use the original MATLAB code** in `mumfordShah2D.m` for end-to-end
-restoration — that path is unchanged by this port.
+The 8-connected (near-isotropic) and ρ-coupled variants from the original
+MATLAB driver have not been ported yet — for those, fall back to the
+MATLAB code in `mumfordShah2D.m`.
 
 ## Array conventions
 
@@ -73,13 +80,12 @@ restoration — that path is unchanged by this port.
 - **Internal Rust core**: `(channels, rows, cols)` (Java / MATLAB convention).
 - A single conversion happens at the PyO3 boundary in `src/lib.rs`.
 
-## Verification approach (Phases 2–5)
+## Verification approach
 
 The Java `.class` files in `Java/bin/mumfordShah/` are kept on disk as a
-reference oracle. From Phase 2 onwards, every Rust algorithm is fuzzed
-against the Java implementation via a small `TestHarness.java` subprocess
-shim, ensuring bit-equivalent (≤ 1e-12) results on hundreds of random
-inputs.
+reference oracle. Every Rust algorithm is fuzzed against the Java
+implementation via a small `TestHarness.java` subprocess shim, ensuring
+bit-equivalent (≤ 1e-12) results on hundreds of random inputs.
 
 ## License
 
