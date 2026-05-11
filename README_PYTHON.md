@@ -4,12 +4,18 @@ Python / Rust port of the MATLAB / Java [MumfordShah2D](README.md) library.
 Edge-preserving image restoration via the piecewise-smooth Mumford-Shah model
 of Hohm, Storath, and Weinmann (Inverse Problems 31(11), 2015).
 
-> **Status: Phase 1 alpha (0.1.0).** The build, scaffolding, and small
-> primitives (`Point`, `GaussElim`/`GaussL2Mum`, `Image`, MATLAB utility
-> ports, prox handles) are in place. The full 2D solver lands in Phase 4.
-> See [`PORTED_BY.md`](PORTED_BY.md) for the phasing plan.
+> **Status: 0.5.2 — Phase 4 (beta).** The 4-connected (anisotropic) 2-D
+> Mumford-Shah ADMM driver is ported and verified at 1e-9 element-wise
+> against MATLAB. 8-connected and ρ-coupled variants remain on the
+> roadmap. See [`PORTED_BY.md`](PORTED_BY.md) for the phasing plan.
 
 ## Installation
+
+From PyPI:
+
+```bash
+pip install mumfordshah2d
+```
 
 From source (requires Rust + maturin):
 
@@ -23,8 +29,6 @@ Or as a regular editable install (also builds the Rust core):
 ```bash
 pip install -e .
 ```
-
-Once Phase 5 ships, the package will be on PyPI as `mumfordshah2d`.
 
 ## Quick check
 
