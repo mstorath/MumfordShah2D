@@ -257,3 +257,5 @@ plan.
 - `pytest tests/` green (≥10 tests).
 - `pip install -e .` succeeds via maturin.
 - No edits to existing `.m` or `.java` files.
+
+[Unreleased]: https://github.com/mstorath/MumfordShah2D/compare/v0.5.2...HEAD
