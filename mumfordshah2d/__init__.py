@@ -9,9 +9,9 @@ ADMM driver and helper functions are pure Python / NumPy / SciPy.
 
 Status
 ------
-**0.2.0 — Phase 4 (beta).** The 4-connected (anisotropic) 2-D Mumford-Shah
+**0.5.2 — Phase 4 (beta).** The 4-connected (anisotropic) 2-D Mumford-Shah
 ADMM driver is ported and verified at 1e-9 element-wise against MATLAB.
-8-connected and ρ-coupled variants are planned for 0.3.0+. See
+8-connected and ρ-coupled variants remain on the roadmap. See
 ``CHANGELOG.md`` and ``PORTED_BY.md`` for the full phasing plan.
 
 Currently exported
@@ -45,7 +45,7 @@ in imaging.* Inverse Problems 31 (11), 115011, 2015.
 DOI 10.1088/0266-5611/31/11/115011.
 """
 
-__version__ = "0.4.0"
+__version__ = "0.5.2"
 __original_authors__ = "Kilian Hohm, Martin Storath, Andreas Weinmann"
 __ported_by__ = (
     "Claude Sonnet coding agent (Anthropic, 2026) — "

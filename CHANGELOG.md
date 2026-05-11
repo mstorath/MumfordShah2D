@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## 0.5.2 — 2026-05-11 (metadata maintenance release)
+
+No algorithmic changes.
+
+### Changed
+
+- README rewritten and harmonised with the lab-repo family (badge block, Quickstart-first ordering, "See also" section linking the five sibling repos, License footer). The previous README pre-dated the Python port and described only the MATLAB workflow.
+- **Internal version-string skew fixed.** Before this release, four different version strings were live simultaneously: `pyproject.toml` had `0.5.1`, `mumfordshah2d/__init__.py::__version__` had `"0.4.0"`, the `__init__.py` docstring claimed `0.2.0 — Phase 4 (beta)`, and `README_PYTHON.md` claimed `Phase 1 alpha (0.1.0)`. All four are now aligned at `0.5.2 — Phase 4 (beta)`.
+- Andreas Weinmann's email updated to `andreas.weinmann@thws.de` in `CITATION.cff`.
+- `CITATION.cff` populated with `version` and `date-released` fields so citation tooling reads from the file directly rather than falling back to GitHub Releases.
+
 ## 0.5.1 — 2026-05-08 (release fix — aarch64 cross-compile)
 
 ### Fixed

@@ -1,8 +1,8 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite both the software and the associated paper below."
 title: "MumfordShah2D: Edge-preserving image restoration via the Mumford-Shah model"
-version: 0.5.1
-date-released: 2026-05-08
+version: 0.5.2
+date-released: 2026-05-11
 abstract: "Algorithms for edge-preserving image restoration based on the Mumford-Shah model. Original MATLAB / Java reference implementation by Hohm, Storath, and Weinmann; a Python / Rust port (package `mumfordshah2d`) is being added to the same repository."
 type: software
 url: "https://github.com/mstorath/MumfordShah2D"
